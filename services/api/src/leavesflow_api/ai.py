@@ -4,6 +4,7 @@ import json
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import ValidationError
@@ -19,8 +20,7 @@ class AIClient:
         self.settings = settings
 
     def generate_plan(self, raw_input: str, tag_context: list[dict[str, str]]) -> DecompositionResult:
-        if self.settings.mock_ai_enabled:
-            return self._mock_plan(raw_input)
+        self._ensure_ai_configured()
         user_content = json.dumps(
             {"rawInput": raw_input, "selectedTagPrompts": tag_context},
             ensure_ascii=False,
@@ -34,8 +34,7 @@ class AIClient:
         )
 
     def extract_skills(self, payload: dict[str, Any]) -> SkillExtractionResult:
-        if self.settings.mock_ai_enabled:
-            return self._mock_skills(payload)
+        self._ensure_ai_configured()
         user_content = json.dumps(payload, ensure_ascii=False)
         return self._chat_json(
             system_prompt=SKILL_EXTRACTION_SYSTEM_PROMPT,
@@ -44,6 +43,10 @@ class AIClient:
             schema=SkillExtractionResult,
             invalid_code="AI_INVALID_SCHEMA",
         )
+
+    def _ensure_ai_configured(self) -> None:
+        if not self.settings.openai_compatible.api_key.strip() or not self.settings.openai_compatible.base_url.strip():
+            raise AppError(503, "AI_NOT_CONFIGURED", "AI 中转服务未配置，无法生成真实可执行内容")
 
     def _chat_json(self, system_prompt: str, user_content: str, temperature: float, schema: type[Any], invalid_code: str) -> Any:
         base_url = self.settings.openai_compatible.base_url.rstrip("/")
@@ -68,7 +71,12 @@ class AIClient:
                 if response.status_code == 429:
                     raise AppError(503, "AI_RATE_LIMITED", "AI 服务繁忙，请稍后再试")
                 if response.status_code < 200 or response.status_code >= 300:
-                    raise AppError(502, "AI_UPSTREAM_ERROR", "AI 中转服务返回异常")
+                    raise AppError(
+                        502,
+                        "AI_UPSTREAM_ERROR",
+                        f"AI 中转服务返回异常：HTTP {response.status_code}",
+                        {"upstreamStatus": response.status_code, "upstreamBody": response.text[:500]},
+                    )
                 content = self._extract_message_content(response.json())
                 parsed = self._parse_json_content(content)
                 normalized = self._normalize_payload(parsed, schema)
@@ -78,7 +86,11 @@ class AIClient:
             except (httpx.TimeoutException, httpx.HTTPError) as exc:
                 last_error = exc
                 if attempt >= self.settings.openai_compatible.max_retries:
-                    raise AppError(502, "AI_UPSTREAM_ERROR", "AI 中转服务请求失败或超时") from exc
+                    raise AppError(
+                        502,
+                        "AI_UPSTREAM_ERROR",
+                        f"AI 中转服务请求失败或超时：{exc.__class__.__name__}",
+                    ) from exc
                 time.sleep(0.4 * (2**attempt))
             except (KeyError, json.JSONDecodeError, ValidationError) as exc:
                 last_error = exc
@@ -140,8 +152,8 @@ class AIClient:
 
     def _normalize_plan_payload(self, payload: Any) -> dict[str, Any]:
         data = dict(payload or {})
-        data["goalTitle"] = data.get("goalTitle") or data.get("title") or data.get("goal") or "未命名目标"
-        data["goalSummary"] = data.get("goalSummary") or data.get("summary") or data.get("description") or "这是一个可执行任务路径。"
+        data["goalTitle"] = data.get("goalTitle") or data.get("title") or data.get("goal") or ""
+        data["goalSummary"] = data.get("goalSummary") or data.get("summary") or data.get("description") or ""
         stages = data.get("stages") or data.get("steps") or data.get("phases") or []
         normalized_stages = []
         for stage_index, stage in enumerate(stages if isinstance(stages, list) else []):
@@ -164,11 +176,9 @@ class AIClient:
                     {
                         "title": title,
                         "description": description,
-                        "contextForAI": task_data.get("contextForAI") or task_data.get("context") or description,
-                        "vibeCodingPrompt": task_data.get("vibeCodingPrompt")
-                        or task_data.get("prompt")
-                        or f"请完成任务：{title}。背景：{description}。请给出明确产出和验收标准。",
-                        "expectedOutput": task_data.get("expectedOutput") or task_data.get("output") or "可检查的任务产出物",
+                        "contextForAI": task_data.get("contextForAI") or task_data.get("context") or "",
+                        "vibeCodingPrompt": task_data.get("vibeCodingPrompt") or task_data.get("prompt") or "",
+                        "expectedOutput": task_data.get("expectedOutput") or task_data.get("output") or "",
                         "path": self._ensure_string_list(path),
                         "tools": self._normalize_recommendations(task_data.get("tools") or []),
                         "resources": self._normalize_recommendations(task_data.get("resources") or []),
@@ -176,30 +186,13 @@ class AIClient:
                         "skillTags": self._ensure_string_list(task_data.get("skillTags") or task_data.get("predictedSkillTags") or []),
                     }
                 )
-            if not normalized_tasks:
-                normalized_tasks.append(
-                    {
-                        "title": "明确任务范围",
-                        "description": "把目标整理成可执行的小任务。",
-                        "contextForAI": "用户目标信息不足，需要先明确范围。",
-                        "vibeCodingPrompt": "请根据用户目标，先明确目标用户、核心场景、最小功能和验收标准。",
-                        "expectedOutput": "一份任务范围说明。",
-                        "path": ["明确目标", "列出范围", "写出验收标准"],
-                        "tools": [],
-                        "resources": [],
-                        "completionCriteria": ["范围说明完整"],
-                        "skillTags": ["目标拆解"],
-                    }
-                )
             normalized_stages.append(
                 {
-                    "title": stage_data.get("title") or stage_data.get("name") or f"阶段 {stage_index + 1}",
-                    "description": stage_data.get("description") or "完成本阶段任务。",
+                    "title": stage_data.get("title") or stage_data.get("name") or "",
+                    "description": stage_data.get("description") or "",
                     "tasks": normalized_tasks,
                 }
             )
-        if not normalized_stages:
-            normalized_stages = self._mock_plan(str(data["goalTitle"])).model_dump(mode="json")["stages"]
         data["stages"] = normalized_stages
         return data
 
@@ -225,16 +218,26 @@ class AIClient:
         normalized = []
         for index, item in enumerate(items if isinstance(items, list) else []):
             row = dict(item or {})
+            url = str(row.get("url") or "").strip()
+            if not self._is_valid_http_url(url):
+                continue
             normalized.append(
                 {
                     "name": str(row.get("name") or row.get("title") or f"推荐工具 {index + 1}"),
                     "title": str(row.get("title") or row.get("name") or f"推荐资源 {index + 1}"),
-                    "usage": str(row.get("usage") or row.get("description") or "辅助完成当前任务"),
-                    "description": str(row.get("description") or row.get("usage") or "辅助完成当前任务"),
-                    "url": str(row.get("url") or "https://example.com"),
+                    "usage": str(row.get("usage") or row.get("description") or "完成当前任务时可调用的真实工具"),
+                    "description": str(row.get("description") or row.get("usage") or "完成当前任务时可参考的真实资源"),
+                    "url": url,
                 }
             )
         return normalized
+
+    def _is_valid_http_url(self, url: str) -> bool:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return False
+        hostname = parsed.hostname or ""
+        return hostname not in {"example.com", "www.example.com"}
 
     def _ensure_string_list(self, value: Any) -> list[str]:
         if isinstance(value, list):
@@ -242,67 +245,3 @@ class AIClient:
         if value is None:
             return []
         return [str(value)]
-
-    def _mock_plan(self, raw_input: str) -> DecompositionResult:
-        title = raw_input.strip()[:40] or "完成一个 AI 项目"
-        return DecompositionResult.model_validate(
-            {
-                "goalTitle": title,
-                "goalSummary": f"围绕“{title}”完成一个适合 Vibe Coding 推进的最小可交付路径。",
-                "stages": [
-                    {
-                        "title": "明确最小交付范围",
-                        "description": "先把模糊目标收束成 AI 能理解并执行的清晰任务边界。",
-                        "tasks": [
-                            {
-                                "title": "定义目标和验收标准",
-                                "description": "把目标拆成用户、场景、核心功能和完成标准。",
-                                "contextForAI": f"用户目标是：{title}。需要先避免过度设计，确认最小可交付范围。",
-                                "vibeCodingPrompt": f"请帮我把“{title}”拆成一个最小可交付版本。请输出目标用户、核心场景、3 个以内核心功能、暂不做范围和验收标准，避免过度设计。",
-                                "expectedOutput": "一份包含目标用户、核心场景、核心功能、暂不做范围和验收标准的范围说明。",
-                                "path": ["写出目标用户", "列出核心场景", "保留 3 个以内核心功能", "定义完成标准"],
-                                "tools": [{"name": "ChatGPT", "usage": "辅助澄清产品范围", "url": "https://chat.openai.com"}],
-                                "resources": [{"title": "React 官方文档", "url": "https://react.dev", "description": "后续实现前端时参考组件和状态管理基础。"}],
-                                "completionCriteria": ["目标用户明确", "核心功能不超过 3 个", "每个功能都有验收标准"],
-                                "skillTags": ["需求拆解", "范围定义"],
-                            }
-                        ],
-                    },
-                    {
-                        "title": "生成可执行开发路径",
-                        "description": "将范围说明转成适合逐步交给 AI 编程工具的任务。",
-                        "tasks": [
-                            {
-                                "title": "拆出第一版页面和数据结构",
-                                "description": "让 AI 明确页面、状态和数据字段，减少实现时的幻觉。",
-                                "contextForAI": "已经有最小交付范围，需要把它转成页面结构和数据结构，不直接开始写大而全代码。",
-                                "vibeCodingPrompt": f"基于“{title}”的最小交付范围，请设计第一版页面结构和数据结构。请只输出页面列表、每个页面的核心状态、需要保存的数据字段和用户操作流程。",
-                                "expectedOutput": "页面结构、状态说明、数据字段和用户操作流程。",
-                                "path": ["列出页面", "确认每页状态", "定义数据字段", "串起用户流程"],
-                                "tools": [{"name": "Codex", "usage": "根据明确上下文生成项目代码", "url": "https://chatgpt.com/codex"}],
-                                "resources": [{"title": "Vite 文档", "url": "https://vite.dev", "description": "用于理解 React Vite 项目启动与构建。"}],
-                                "completionCriteria": ["页面结构完整", "数据字段可实现", "用户流程能从开始走到完成"],
-                                "skillTags": ["信息架构", "Vibe Coding 任务设计"],
-                            }
-                        ],
-                    },
-                ],
-            }
-        )
-
-    def _mock_skills(self, payload: dict[str, Any]) -> SkillExtractionResult:
-        task = payload.get("task", {})
-        title = task.get("title", "完成任务")
-        return SkillExtractionResult.model_validate(
-            {
-                "newSkillTags": [
-                    {
-                        "name": "Vibe Coding 拆解",
-                        "level": "入门",
-                        "prompt": f"当我需要完成类似“{title}”的任务时，请你先帮我明确上下文、输入材料、预期产出和验收标准，再把任务拆成 AI 能一次理解并稳定完成的小步骤。",
-                        "source": title,
-                        "reason": "用户完成了一个带有明确上下文、产出和验收标准的任务节点，体现了将目标转为可执行 AI 协作任务的能力。",
-                    }
-                ]
-            }
-        )

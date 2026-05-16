@@ -7,6 +7,7 @@ from .default_tags import CATEGORY_NAMES
 from .errors import AppError
 from .models import Goal, SkillTag, Stage, TagOption, TaskCheckIn, TaskNode, UserTagProfile
 from .schemas import (
+    ActivePlanResponse,
     CheckInSkillOut,
     DecompositionResult,
     PlanResponse,
@@ -100,6 +101,21 @@ def _validate_profile_ids(db: Session, profile_ids: UserTagProfileIds) -> None:
                 fields.setdefault(api_field, []).append(f"标签分类不匹配：{tag.label}")
     if fields:
         raise AppError(400, "VALIDATION_ERROR", "标签选择不符合要求", {"fields": fields})
+
+
+def validate_required_profile_ids(
+    db: Session,
+    profile_ids: UserTagProfileIds,
+    required_fields: list[str],
+) -> None:
+    _validate_profile_ids(db, profile_ids)
+    fields: dict[str, list[str]] = {}
+    for field in required_fields:
+        ids = getattr(profile_ids, field)
+        if len(ids) != 1:
+            fields.setdefault(field, []).append("必须选择 1 个标签")
+    if fields:
+        raise AppError(400, "VALIDATION_ERROR", "请完整选择必填标签", {"fields": fields})
 
 
 def profile_ids_to_out(db: Session, profile_ids: UserTagProfileIds) -> UserTagProfileOut:
@@ -227,9 +243,57 @@ def plan_to_response(db: Session, goal: Goal) -> PlanResponse | None:
     )
 
 
+def active_plan_to_response(db: Session, goal: Goal) -> ActivePlanResponse | None:
+    plan = plan_to_response(db, goal)
+    if not plan:
+        return None
+    tasks = [task for stage in plan.stages for task in stage.tasks]
+    completed = sum(1 for task in tasks if task.status == "completed")
+    return ActivePlanResponse(
+        goalId=plan.goalId,
+        goalTitle=plan.goalTitle,
+        goalSummary=plan.goalSummary,
+        status=goal.status,
+        completedTasks=completed,
+        totalTasks=len(tasks),
+        isComplete=len(tasks) > 0 and completed == len(tasks),
+        stages=plan.stages,
+    )
+
+
+def current_active_plan(db: Session, user_id: str) -> ActivePlanResponse | None:
+    goals = db.scalars(
+        select(Goal).where(Goal.user_id == user_id, Goal.status == "active").order_by(Goal.created_at.desc())
+    ).all()
+    for goal in goals:
+        active_plan = active_plan_to_response(db, goal)
+        if active_plan and not active_plan.isComplete:
+            return active_plan
+        if active_plan and active_plan.isComplete:
+            goal.status = "completed"
+            goal.updated_at = utc_now()
+    db.commit()
+    return None
+
+
+def mark_goal_completed_if_needed(db: Session, goal: Goal) -> None:
+    total = db.scalar(select(TaskNode.id).where(TaskNode.goal_id == goal.id).limit(1))
+    if not total:
+        return
+    pending = db.scalar(select(TaskNode.id).where(TaskNode.goal_id == goal.id, TaskNode.status != "completed").limit(1))
+    if pending:
+        return
+    goal.status = "completed"
+    goal.updated_at = utc_now()
+
+
 def persist_plan(db: Session, goal: Goal, result: DecompositionResult) -> PlanResponse:
     if db.scalar(select(Stage.id).where(Stage.goal_id == goal.id).limit(1)):
         raise AppError(409, "CONFLICT", "该目标已经生成过任务路径，V1 暂不支持覆盖重算")
+    for stage_data in result.stages:
+        for task_data in stage_data.tasks:
+            if not task_data.tools or not task_data.resources:
+                raise AppError(502, "AI_INVALID_SCHEMA", "AI 任务路径缺少真实可调用工具或参考资源")
     goal.title = result.goalTitle
     goal.goal_summary = result.goalSummary
     goal.updated_at = utc_now()

@@ -61,6 +61,13 @@ class UserTagProfileOut(BaseModel):
     outputPreferenceTags: list[SelectedTagOut] = Field(default_factory=list)
 
 
+class UserOut(BaseModel):
+    id: str
+    username: str
+    displayName: str
+    createdAt: str
+
+
 class SkillTagOut(BaseModel):
     id: str
     name: str
@@ -73,10 +80,48 @@ class SkillTagOut(BaseModel):
     updatedAt: str
 
 
-class MeResponse(BaseModel):
-    userId: str
+class AuthResponse(BaseModel):
+    token: str
+    user: UserOut
     tagProfile: UserTagProfileOut
-    skillTags: list[SkillTagOut]
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=6, max_length=128)
+    displayName: str | None = Field(default=None, max_length=32)
+    profile: UserTagProfileIds
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        username = value.strip().lower()
+        if not username:
+            raise ValueError("用户名不能为空")
+        allowed = set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+        if any(char not in allowed for char in username):
+            raise ValueError("用户名只能包含英文、数字、下划线或短横线")
+        return username
+
+    @field_validator("displayName")
+    @classmethod
+    def normalize_display_name(cls, value: str | None) -> str | None:
+        text = (value or "").strip()
+        return text or None
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=6, max_length=128)
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class UpdateMeRequest(BaseModel):
+    displayName: str = Field(min_length=1, max_length=32)
 
 
 class UpdateTagProfileResponse(BaseModel):
@@ -106,7 +151,11 @@ class ToolRecommendation(BaseModel):
     @classmethod
     def normalize_url(cls, value: object) -> str:
         text = str(value or "").strip()
-        return text if text.startswith(("http://", "https://")) else "https://example.com"
+        if not text.startswith(("http://", "https://")):
+            raise ValueError("URL 必须是 http 或 https")
+        if "example.com" in text:
+            raise ValueError("URL 不能使用占位链接")
+        return text
 
 
 class ResourceRecommendation(BaseModel):
@@ -118,7 +167,11 @@ class ResourceRecommendation(BaseModel):
     @classmethod
     def normalize_url(cls, value: object) -> str:
         text = str(value or "").strip()
-        return text if text.startswith(("http://", "https://")) else "https://example.com"
+        if not text.startswith(("http://", "https://")):
+            raise ValueError("URL 必须是 http 或 https")
+        if "example.com" in text:
+            raise ValueError("URL 不能使用占位链接")
+        return text
 
 
 class DecompositionTask(BaseModel):
@@ -175,6 +228,25 @@ class PlanResponse(BaseModel):
     goalTitle: str
     goalSummary: str
     stages: list[StageOut]
+
+
+class ActivePlanResponse(BaseModel):
+    goalId: str
+    goalTitle: str
+    goalSummary: str
+    status: GoalStatus
+    completedTasks: int
+    totalTasks: int
+    isComplete: bool
+    stages: list[StageOut]
+
+
+class MeResponse(BaseModel):
+    userId: str
+    user: UserOut
+    tagProfile: UserTagProfileOut
+    skillTags: list[SkillTagOut]
+    activePlan: ActivePlanResponse | None = None
 
 
 class GoalDetailResponse(BaseModel):

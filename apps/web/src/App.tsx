@@ -1,4 +1,5 @@
 import type {
+  ActivePlanResponse,
   CheckInResponse,
   MeResponse,
   PlanResponse,
@@ -6,10 +7,10 @@ import type {
   TagOptionCategory,
   UserTagProfileIds,
 } from '@leavesflow/shared-types'
+import { LeavesFlowApiError } from '@leavesflow/api-client'
 import {
   ArrowLeft,
   BadgeCheck,
-  BookOpen,
   CheckCircle2,
   ChevronDown,
   Clipboard,
@@ -20,18 +21,21 @@ import {
   Flag,
   Leaf,
   Loader2,
+  LogOut,
   Map,
   MapPin,
   PenLine,
   Route,
+  Settings,
   Sparkles,
   Tags,
   UserRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { api } from './api'
+import { AUTH_TOKEN_STORAGE_KEY, api, clearAuthToken, setAuthToken } from './api'
 
-type ViewKey = 'tags' | 'goal' | 'plan' | 'skills'
+type ViewKey = 'goal' | 'plan' | 'skills' | 'user'
+type AuthMode = 'login' | 'register'
 type RouteTask = PlanResponse['stages'][number]['tasks'][number] & { stageTitle: string }
 type RecommendationKind = 'tool' | 'resource' | 'collaborator'
 
@@ -61,14 +65,30 @@ const categoryToField: Record<TagOptionCategory['key'], keyof UserTagProfileIds>
   output_preference_tags: 'outputPreferenceTagIds',
 }
 
-const quickGoals = ['做一个AI网站', '完成React项目', '学习AI产品设计', '准备互联网面试']
+const baseCategoryKeys: TagOptionCategory['key'][] = ['identity_tags', 'background_tags', 'level_tags']
+const goalCategoryKeys: TagOptionCategory['key'][] = [
+  'goal_type_tags',
+  'time_range_tags',
+  'output_preference_tags',
+]
+
+const inputGuidance = '写下你真正想推进的事。可以很短，也可以补充背景、交付物或截止时间。'
+
+function errorMessage(err: unknown, fallback: string) {
+  if (err instanceof LeavesFlowApiError) {
+    const details = err.details as { upstreamStatus?: number; upstreamBody?: string } | undefined
+    const upstream = details?.upstreamStatus ? `（上游 HTTP ${details.upstreamStatus}）` : ''
+    return `${err.message}${upstream}`
+  }
+  return err instanceof Error ? err.message : fallback
+}
 
 function compactText(value: string, maxLength = 46) {
   const text = value.trim()
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
 }
 
-function getAllTasks(plan: PlanResponse): RouteTask[] {
+function getAllTasks(plan: PlanResponse | ActivePlanResponse): RouteTask[] {
   return plan.stages.flatMap((stage) => stage.tasks.map((task) => ({ ...task, stageTitle: stage.title })))
 }
 
@@ -95,19 +115,48 @@ function openRecommendationUrl(url: string, title: string, kind: RecommendationK
   window.location.assign(url)
 }
 
+function profileFromMe(meData: MeResponse): UserTagProfileIds {
+  return {
+    identityTagIds: meData.tagProfile.identityTags.map((tag) => tag.id),
+    backgroundTagIds: meData.tagProfile.backgroundTags.map((tag) => tag.id),
+    levelTagIds: meData.tagProfile.levelTags.map((tag) => tag.id),
+    goalTypeTagIds: meData.tagProfile.goalTypeTags.map((tag) => tag.id),
+    timeRangeTagIds: meData.tagProfile.timeRangeTags.map((tag) => tag.id),
+    outputPreferenceTagIds: meData.tagProfile.outputPreferenceTags.map((tag) => tag.id),
+  }
+}
+
+function selectedCount(profile: UserTagProfileIds, keys: TagOptionCategory['key'][] = Object.keys(categoryToField) as TagOptionCategory['key'][]) {
+  return keys.reduce((sum, key) => sum + profile[categoryToField[key]].length, 0)
+}
+
+function mergeGoalProfile(baseProfile: UserTagProfileIds, goalProfile: UserTagProfileIds): UserTagProfileIds {
+  return {
+    identityTagIds: baseProfile.identityTagIds,
+    backgroundTagIds: baseProfile.backgroundTagIds,
+    levelTagIds: baseProfile.levelTagIds,
+    goalTypeTagIds: goalProfile.goalTypeTagIds,
+    timeRangeTagIds: goalProfile.timeRangeTagIds,
+    outputPreferenceTagIds: goalProfile.outputPreferenceTagIds,
+  }
+}
+
 export function App() {
-  const [view, setView] = useState<ViewKey>('tags')
+  const [view, setView] = useState<ViewKey>('goal')
+  const [authMode, setAuthMode] = useState<AuthMode>('register')
   const [tagCategories, setTagCategories] = useState<TagOptionCategory[]>([])
-  const [profile, setProfile] = useState<UserTagProfileIds>(emptyProfile)
+  const [baseProfile, setBaseProfile] = useState<UserTagProfileIds>(emptyProfile)
+  const [goalProfile, setGoalProfile] = useState<UserTagProfileIds>(emptyProfile)
   const [me, setMe] = useState<MeResponse | null>(null)
-  const [rawInput, setRawInput] = useState('做一个AI网站')
-  const [plan, setPlan] = useState<PlanResponse | null>(null)
+  const [rawInput, setRawInput] = useState('')
+  const [plan, setPlan] = useState<ActivePlanResponse | PlanResponse | null>(null)
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const [expandedTags, setExpandedTags] = useState<Record<string, boolean>>({})
   const [checkInTaskId, setCheckInTaskId] = useState<string | null>(null)
   const [checkInText, setCheckInText] = useState({ whatDone: '', whatProduced: '', problems: '' })
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [generatingPlan, setGeneratingPlan] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -117,22 +166,41 @@ export function App() {
 
   async function bootstrap() {
     setLoading(true)
+    setError('')
     try {
-      const [tagOptions, meData] = await Promise.all([api.getTagOptions(), api.getMe()])
+      const tagOptions = await api.getTagOptions()
       setTagCategories(tagOptions.categories)
-      setMe(meData)
-      setProfile({
-        identityTagIds: meData.tagProfile.identityTags.map((tag) => tag.id),
-        backgroundTagIds: meData.tagProfile.backgroundTags.map((tag) => tag.id),
-        levelTagIds: meData.tagProfile.levelTags.map((tag) => tag.id),
-        goalTypeTagIds: meData.tagProfile.goalTypeTags.map((tag) => tag.id),
-        timeRangeTagIds: meData.tagProfile.timeRangeTags.map((tag) => tag.id),
-        outputPreferenceTagIds: meData.tagProfile.outputPreferenceTags.map((tag) => tag.id),
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '初始化失败')
+      if (!localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)) {
+        setMe(null)
+        setPlan(null)
+        return
+      }
+      const meData = await api.getMe()
+      applyMeState(meData)
+    } catch {
+      try {
+        const tagOptions = await api.getTagOptions()
+        setTagCategories(tagOptions.categories)
+      } catch {
+        setTagCategories([])
+      }
+      setMe(null)
+      setPlan(null)
     } finally {
       setLoading(false)
+    }
+  }
+
+  function applyMeState(meData: MeResponse) {
+    const profile = profileFromMe(meData)
+    setMe(meData)
+    setBaseProfile(profile)
+    setGoalProfile(profile)
+    if (meData.activePlan) {
+      setPlan(meData.activePlan)
+      setView('plan')
+      const firstPending = getAllTasks(meData.activePlan).find((task) => task.status !== 'completed')
+      setActiveTaskId(firstPending?.id ?? meData.activePlan.stages[0]?.tasks[0]?.id ?? null)
     }
   }
 
@@ -140,28 +208,103 @@ export function App() {
     () => plan?.stages.flatMap((stage) => stage.tasks).filter((task) => task.status === 'completed').length ?? 0,
     [plan],
   )
-
   const totalTasks = useMemo(() => plan?.stages.flatMap((stage) => stage.tasks).length ?? 0, [plan])
+  const baseCategories = useMemo(
+    () => tagCategories.filter((category) => baseCategoryKeys.includes(category.key)),
+    [tagCategories],
+  )
+  const goalCategories = useMemo(
+    () => tagCategories.filter((category) => goalCategoryKeys.includes(category.key)),
+    [tagCategories],
+  )
 
-  function selectTag(category: TagOptionCategory, optionId: string) {
+  function selectTag(
+    target: 'base' | 'goal',
+    category: TagOptionCategory,
+    optionId: string,
+  ) {
     const field = categoryToField[category.key]
-    setProfile((current) => ({
+    const setter = target === 'base' ? setBaseProfile : setGoalProfile
+    setter((current) => ({
       ...current,
       [field]: current[field][0] === optionId ? [] : [optionId],
     }))
   }
 
-  async function saveProfile() {
+  async function handleAuth(payload: {
+    mode: AuthMode
+    username: string
+    password: string
+    displayName?: string
+  }) {
     setLoading(true)
     setError('')
     setMessage('')
     try {
-      await api.updateTagProfile(profile)
-      setMe(await api.getMe())
-      setMessage('标签封装已保存，接下来可以输入目标。')
-      setView('goal')
+      const result =
+        payload.mode === 'register'
+          ? await api.register({
+              username: payload.username,
+              password: payload.password,
+              displayName: payload.displayName,
+              profile: baseProfile,
+            })
+          : await api.login({ username: payload.username, password: payload.password })
+      setAuthToken(result.token)
+      const meData = await api.getMe()
+      applyMeState(meData)
+      setMessage(payload.mode === 'register' ? '注册完成，账号和画像已保存。' : '欢迎回来，已恢复你的任务状态。')
+      setView(meData.activePlan ? 'plan' : 'goal')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '保存标签失败')
+      setError(errorMessage(err, '账号操作失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function saveBaseProfile() {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      await api.updateTagProfile(baseProfile)
+      const meData = await api.getMe()
+      applyMeState(meData)
+      setMessage('基础画像已更新，后续任务会沿用这些信息。')
+    } catch (err) {
+      setError(errorMessage(err, '保存画像失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function updateDisplayName(displayName: string) {
+    setLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      const meData = await api.updateMe({ displayName })
+      applyMeState(meData)
+      setMessage('账号信息已保存。')
+    } catch (err) {
+      setError(errorMessage(err, '保存账号信息失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function refreshActivePlan() {
+    setLoading(true)
+    setError('')
+    try {
+      const activePlan = await api.getActivePlan()
+      setPlan(activePlan)
+      const firstPending = getAllTasks(activePlan).find((task) => task.status !== 'completed')
+      setActiveTaskId(firstPending?.id ?? activePlan.stages[0]?.tasks[0]?.id ?? null)
+      setView('plan')
+    } catch (err) {
+      setPlan(null)
+      setMessage(errorMessage(err, '当前没有未完成任务路径。'))
     } finally {
       setLoading(false)
     }
@@ -173,19 +316,29 @@ export function App() {
       setError('请先输入一个目标')
       return
     }
+    if (selectedCount(goalProfile, goalCategoryKeys) !== goalCategoryKeys.length) {
+      setError('请先选择目标类型、时间周期和输出偏好')
+      return
+    }
     setLoading(true)
+    setGeneratingPlan(true)
     setError('')
     setMessage('LeavesFlow 正在把目标拆成适合 Vibe Coding 的路径。')
+    setPlan(null)
+    setActiveTaskId(null)
     setView('plan')
     try {
-      const goal = await api.createGoal(text, profile)
+      const snapshot = mergeGoalProfile(baseProfile, goalProfile)
+      const goal = await api.createGoal(text, snapshot)
       const generated = await api.generatePlan(goal.id)
       setPlan(generated)
       setActiveTaskId(generated.stages[0]?.tasks[0]?.id ?? null)
       setMessage('任务路径已生成，可以从第一步开始。')
+      setMe(await api.getMe())
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成任务路径失败')
+      setError(errorMessage(err, '生成任务路径失败'))
     } finally {
+      setGeneratingPlan(false)
       setLoading(false)
     }
   }
@@ -199,50 +352,68 @@ export function App() {
         whatProduced: checkInText.whatProduced || undefined,
         problems: checkInText.problems || undefined,
       })
-      if (plan) {
-        setPlan(await api.getPlan(plan.goalId))
+      const refreshedPlan = plan ? await api.getPlan(plan.goalId) : null
+      if (refreshedPlan) {
+        setPlan(refreshedPlan)
+        const nextPending = getAllTasks(refreshedPlan).find((task) => task.status !== 'completed')
+        setActiveTaskId(nextPending?.id ?? taskId)
       }
       setMe(await api.getMe())
       setCheckInTaskId(null)
       setCheckInText({ whatDone: '', whatProduced: '', problems: '' })
       setMessage(`已沉淀 ${result.newSkillTags.length} 张能力 Prompt 卡片。`)
-      setView('skills')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '打卡失败')
+      setError(errorMessage(err, '打卡失败'))
     } finally {
       setLoading(false)
     }
   }
 
+  function logout() {
+    clearAuthToken()
+    setMe(null)
+    setPlan(null)
+    setRawInput('')
+    setMessage('已退出登录。')
+    setError('')
+    setView('goal')
+  }
+
+  if (!me) {
+    return (
+      <div className="min-h-screen pb-8 text-ink">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
+          {(message || error) && <Notice message={message} error={error} />}
+          <AuthPanel
+            mode={authMode}
+            setMode={setAuthMode}
+            categories={baseCategories}
+            profile={baseProfile}
+            expandedTags={expandedTags}
+            onExpand={(id) => setExpandedTags((current) => ({ ...current, [id]: !current[id] }))}
+            onSelect={(category, optionId) => selectTag('base', category, optionId)}
+            onSubmit={handleAuth}
+            loading={loading}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen pb-28 text-ink">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
-        {(message || error) && (
-          <div
-            className={`rounded-[20px] border px-4 py-3 text-sm shadow-soft ${
-              error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-leaf/20 bg-white/80 text-ink'
-            }`}
-          >
-            {error || message}
-          </div>
-        )}
-
-        {view === 'tags' && (
-          <TagProfilePanel
-            categories={tagCategories}
-            profile={profile}
-            expandedTags={expandedTags}
-            onExpand={(id) => setExpandedTags((current) => ({ ...current, [id]: !current[id] }))}
-            onSelect={selectTag}
-            onSave={saveProfile}
-            loading={loading}
-          />
-        )}
+        {(message || error) && <Notice message={message} error={error} />}
 
         {view === 'goal' && (
           <GoalPanel
+            categories={goalCategories}
+            profile={goalProfile}
+            expandedTags={expandedTags}
             rawInput={rawInput}
             setRawInput={setRawInput}
+            onExpand={(id) => setExpandedTags((current) => ({ ...current, [id]: !current[id] }))}
+            onSelect={(category, optionId) => selectTag('goal', category, optionId)}
             onGenerate={createAndGenerateGoal}
             loading={loading}
           />
@@ -252,6 +423,7 @@ export function App() {
           <PlanPanel
             plan={plan}
             loading={loading}
+            generatingPlan={generatingPlan}
             activeTaskId={activeTaskId}
             setActiveTaskId={setActiveTaskId}
             checkInTaskId={checkInTaskId}
@@ -259,20 +431,48 @@ export function App() {
             checkInText={checkInText}
             setCheckInText={setCheckInText}
             onCheckIn={submitCheckIn}
+            onRefresh={refreshActivePlan}
           />
         )}
 
         {view === 'skills' && (
           <SkillPanel
-            skills={me?.skillTags ?? []}
+            skills={me.skillTags}
             onRefresh={bootstrap}
             loading={loading}
             selectedSkillId={selectedSkillId}
             setSelectedSkillId={setSelectedSkillId}
           />
         )}
+
+        {view === 'user' && (
+          <UserPanel
+            me={me}
+            categories={baseCategories}
+            profile={baseProfile}
+            expandedTags={expandedTags}
+            loading={loading}
+            onExpand={(id) => setExpandedTags((current) => ({ ...current, [id]: !current[id] }))}
+            onSelect={(category, optionId) => selectTag('base', category, optionId)}
+            onSaveProfile={saveBaseProfile}
+            onSaveDisplayName={updateDisplayName}
+            onLogout={logout}
+          />
+        )}
       </div>
       <BottomNav view={view} onViewChange={setView} completedCount={completedCount} totalTasks={totalTasks} />
+    </div>
+  )
+}
+
+function Notice({ message, error }: { message: string; error: string }) {
+  return (
+    <div
+      className={`rounded-[20px] border px-4 py-3 text-sm shadow-soft ${
+        error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-leaf/20 bg-white/80 text-ink'
+      }`}
+    >
+      {error || message}
     </div>
   )
 }
@@ -288,11 +488,11 @@ function BottomNav({
   completedCount: number
   totalTasks: number
 }) {
-  const items: Array<{ key: ViewKey; label: string; icon: typeof Tags }> = [
-    { key: 'tags', label: '标签', icon: Tags },
+  const items: Array<{ key: ViewKey; label: string; icon: typeof PenLine }> = [
     { key: 'goal', label: '目标', icon: PenLine },
     { key: 'plan', label: '路径', icon: Route },
     { key: 'skills', label: '技能', icon: Sparkles },
+    { key: 'user', label: '用户', icon: UserRound },
   ]
   return (
     <nav className="fixed inset-x-0 bottom-3 z-50 px-3">
@@ -305,9 +505,7 @@ function BottomNav({
               <button
                 key={item.key}
                 className={`soft-focus-ring flex min-w-0 items-center justify-center gap-1 rounded-[18px] px-1 py-2 text-[11px] font-black leading-tight transition sm:gap-2 sm:text-sm ${
-                  active
-                    ? 'bg-ink text-white shadow-soft'
-                    : 'text-ink/62 hover:bg-white/80 hover:text-ink'
+                  active ? 'bg-ink text-white shadow-soft' : 'text-ink/62 hover:bg-white/80 hover:text-ink'
                 }`}
                 onClick={() => onViewChange(item.key)}
                 aria-current={active ? 'page' : undefined}
@@ -340,134 +538,238 @@ function BrandMark() {
   )
 }
 
-function TagProfilePanel({
+function AuthPanel({
+  mode,
+  setMode,
   categories,
   profile,
   expandedTags,
   onExpand,
   onSelect,
-  onSave,
+  onSubmit,
   loading,
+}: {
+  mode: AuthMode
+  setMode: (mode: AuthMode) => void
+  categories: TagOptionCategory[]
+  profile: UserTagProfileIds
+  expandedTags: Record<string, boolean>
+  onExpand: (id: string) => void
+  onSelect: (category: TagOptionCategory, optionId: string) => void
+  onSubmit: (payload: { mode: AuthMode; username: string; password: string; displayName?: string }) => void
+  loading: boolean
+}) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const registerReady = selectedCount(profile, baseCategoryKeys) === baseCategoryKeys.length
+
+  return (
+    <main className="grid gap-4 lg:grid-cols-[0.84fr_1.16fr]">
+      <section className="rounded-[26px] border border-line bg-white/84 p-5 shadow-paper sm:p-6">
+        <BrandMark />
+        <p className="mt-6 text-sm font-bold text-leaf">V1.2 账号体系</p>
+        <h1 className="mt-1 text-3xl font-black sm:text-4xl">{mode === 'register' ? '创建你的任务资产库' : '回到你的任务路径'}</h1>
+        <p className="mt-3 text-sm leading-6 text-ink/64">
+          注册后，画像、任务路径、打卡记录和能力 Prompt 都会保存在本地数据库里。
+        </p>
+
+        <div className="mt-6 grid grid-cols-2 rounded-2xl border border-line bg-paper/70 p-1">
+          {(['login', 'register'] as AuthMode[]).map((item) => (
+            <button
+              key={item}
+              className={`soft-focus-ring rounded-xl px-4 py-2 text-sm font-black ${
+                mode === item ? 'bg-ink text-white shadow-soft' : 'text-ink/62 hover:bg-white/70'
+              }`}
+              onClick={() => setMode(item)}
+            >
+              {item === 'login' ? '登录' : '注册'}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          {mode === 'register' && (
+            <input
+              className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
+              placeholder="昵称"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+            />
+          )}
+          <input
+            className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
+            placeholder="用户名：英文、数字、_ 或 -"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+          <input
+            className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
+            placeholder="密码，至少 6 位"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </div>
+
+        <button
+          className="soft-focus-ring mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={loading || !username.trim() || !password.trim() || (mode === 'register' && !registerReady)}
+          onClick={() => onSubmit({ mode, username, password, displayName })}
+        >
+          {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+          {mode === 'register' ? '注册并进入' : '登录'}
+        </button>
+      </section>
+
+      {mode === 'register' && (
+        <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+          <h2 className="flex items-center gap-2 text-lg font-black">
+            <Tags size={18} className="text-leaf" />
+            注册时选择基础画像
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-ink/64">
+            身份、专业背景、能力阶段只在用户层保存，后续任务会自动沿用。
+          </p>
+          <TagCategoryList
+            categories={categories}
+            profile={profile}
+            expandedTags={expandedTags}
+            onExpand={onExpand}
+            onSelect={onSelect}
+          />
+        </section>
+      )}
+    </main>
+  )
+}
+
+function TagCategoryList({
+  categories,
+  profile,
+  expandedTags,
+  onExpand,
+  onSelect,
+  compact = false,
 }: {
   categories: TagOptionCategory[]
   profile: UserTagProfileIds
   expandedTags: Record<string, boolean>
   onExpand: (id: string) => void
   onSelect: (category: TagOptionCategory, optionId: string) => void
-  onSave: () => void
-  loading: boolean
+  compact?: boolean
 }) {
-  const selectedCount = Object.values(profile).reduce((sum, ids) => sum + ids.length, 0)
-
   return (
-    <main className="grid gap-4">
-      <section className="rounded-[24px] border border-line bg-white/82 p-4 shadow-paper sm:p-5">
-        <BrandMark />
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-leaf">选择基础画像</p>
-            <h1 className="mt-1 text-2xl font-black sm:text-3xl">用几个标签校准任务路径</h1>
-          </div>
-          <button
-            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={loading}
-            onClick={onSave}
-          >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-            保存并继续
-          </button>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-ink/64">
-          已选择 {selectedCount} 项。点开箭头可查看标签背后的 Prompt，当前版本只查看不编辑。
-        </p>
-      </section>
-
-      <section className="grid gap-3">
-        {categories.map((category) => {
-          const field = categoryToField[category.key]
-          return (
-            <div key={category.key} className="rounded-[22px] border border-line bg-white/78 p-3 shadow-soft sm:p-4">
-              <h2 className="mb-3 flex items-center gap-2 text-base font-black">
-                <Tags size={18} className="text-leaf" />
-                {category.name}
-              </h2>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                {category.options.map((option) => {
-                  const selected = profile[field].includes(option.id)
-                  const expanded = expandedTags[option.id]
-                  return (
-                    <div
-                      key={option.id}
-                      className={`overflow-hidden rounded-2xl border transition ${
-                        selected ? 'border-leaf bg-mint/72 shadow-soft' : 'border-line bg-paper/70 hover:border-leaf/45'
-                      }`}
-                    >
-                      <div className="flex min-h-[46px] items-center gap-1 px-2 py-1.5">
-                        <button
-                          className="soft-focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-black"
-                          onClick={() => onSelect(category, option.id)}
-                          aria-pressed={selected}
-                          aria-label={`${selected ? '取消选择' : '选择'}${option.label}`}
-                        >
-                          {selected ? (
-                            <CheckCircle2 className="shrink-0 text-leaf" size={17} />
-                          ) : (
-                            <Circle className="shrink-0 text-ink/30" size={17} />
-                          )}
-                          <span className="truncate">{option.label}</span>
-                        </button>
-                        <button
-                          className="soft-focus-ring shrink-0 rounded-xl p-2 text-ink/55 hover:bg-white/85"
-                          onClick={() => onExpand(option.id)}
-                          aria-label="展开标签封装"
-                        >
-                          <ChevronDown className={expanded ? 'rotate-180 transition' : 'transition'} size={17} />
-                        </button>
-                      </div>
-                      {expanded && (
-                        <p className="border-t border-line/70 bg-white/62 px-3 py-3 text-xs leading-5 text-ink/70">
-                          {option.promptText}
-                        </p>
-                      )}
+    <div className="mt-4 grid gap-3">
+      {categories.map((category) => {
+        const field = categoryToField[category.key]
+        return (
+          <div key={category.key} className="rounded-[22px] border border-line bg-white/66 p-3">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-black">
+              <Tags size={16} className="text-leaf" />
+              {category.name}
+            </h3>
+            <div className={`grid gap-2 ${compact ? 'sm:grid-cols-2 xl:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-3'}`}>
+              {category.options.map((option) => {
+                const selected = profile[field].includes(option.id)
+                const expanded = expandedTags[option.id]
+                return (
+                  <div
+                    key={option.id}
+                    className={`overflow-hidden rounded-2xl border transition ${
+                      selected ? 'border-leaf bg-mint/72 shadow-soft' : 'border-line bg-paper/70 hover:border-leaf/45'
+                    }`}
+                  >
+                    <div className="flex min-h-[46px] items-center gap-1 px-2 py-1.5">
+                      <button
+                        className="soft-focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-black"
+                        onClick={() => onSelect(category, option.id)}
+                        aria-pressed={selected}
+                        aria-label={`${selected ? '取消选择' : '选择'}${option.label}`}
+                      >
+                        {selected ? (
+                          <CheckCircle2 className="shrink-0 text-leaf" size={17} />
+                        ) : (
+                          <Circle className="shrink-0 text-ink/30" size={17} />
+                        )}
+                        <span className="truncate">{option.label}</span>
+                      </button>
+                      <button
+                        className="soft-focus-ring shrink-0 rounded-xl p-2 text-ink/55 hover:bg-white/85"
+                        onClick={() => onExpand(option.id)}
+                        aria-label="展开标签封装"
+                      >
+                        <ChevronDown className={expanded ? 'rotate-180 transition' : 'transition'} size={17} />
+                      </button>
                     </div>
-                  )
-                })}
-              </div>
+                    {expanded && (
+                      <p className="border-t border-line/70 bg-white/62 px-3 py-3 text-xs leading-5 text-ink/70">
+                        {option.promptText}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
-      </section>
-    </main>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
 function GoalPanel({
+  categories,
+  profile,
+  expandedTags,
   rawInput,
   setRawInput,
+  onExpand,
+  onSelect,
   onGenerate,
   loading,
 }: {
+  categories: TagOptionCategory[]
+  profile: UserTagProfileIds
+  expandedTags: Record<string, boolean>
   rawInput: string
   setRawInput: (value: string) => void
+  onExpand: (id: string) => void
+  onSelect: (category: TagOptionCategory, optionId: string) => void
   onGenerate: () => void
   loading: boolean
 }) {
   return (
-    <main className="grid gap-4 lg:grid-cols-[1fr_0.66fr]">
+    <main className="grid gap-4">
       <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
         <BrandMark />
         <h1 className="mt-5 text-3xl font-black sm:text-4xl">今天想完成什么？</h1>
         <p className="mt-2 text-sm leading-6 text-ink/64">直接写事情本身就好，长一点也可以。</p>
         <textarea
-          className="soft-focus-ring mt-5 min-h-44 w-full resize-none rounded-[22px] border border-line bg-paper/70 p-5 text-lg leading-8 shadow-inner"
+          className="soft-focus-ring mt-5 min-h-56 w-full resize-none rounded-[22px] border border-line bg-paper/70 p-5 text-lg leading-8 text-ink placeholder:text-ink/34 shadow-inner"
           maxLength={1000}
           value={rawInput}
           onChange={(event) => setRawInput(event.target.value)}
-          placeholder="例如：做一个AI网站"
+          placeholder={inputGuidance}
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-ink/58">
           <span>{rawInput.length}/1000</span>
           <span>写清楚想完成的事，LeavesFlow 会拆成可执行步骤。</span>
+        </div>
+        <div className="mt-5 rounded-[24px] border border-line bg-white/68 p-4">
+          <h2 className="flex items-center gap-2 text-lg font-black">
+            <Settings size={18} className="text-leaf" />
+            本次任务设置
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-ink/64">选择本次目标的类型、时间和输出偏好，基础画像会自动带入。</p>
+          <TagCategoryList
+            categories={categories}
+            profile={profile}
+            expandedTags={expandedTags}
+            onExpand={onExpand}
+            onSelect={onSelect}
+            compact
+          />
         </div>
         <button
           className="soft-focus-ring mt-6 inline-flex items-center gap-2 rounded-2xl bg-peach px-6 py-3 text-sm font-black text-ink shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
@@ -478,23 +780,6 @@ function GoalPanel({
           生成任务路径
         </button>
       </section>
-      <aside className="rounded-[26px] border border-line bg-white/74 p-4 shadow-soft sm:p-5">
-        <h2 className="flex items-center gap-2 text-lg font-black">
-          <BookOpen size={18} className="text-leaf" />
-          可以这样写
-        </h2>
-        <div className="mt-4 grid gap-3">
-          {quickGoals.map((goal) => (
-            <button
-              key={goal}
-              className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-left text-sm font-bold hover:border-peach"
-              onClick={() => setRawInput(goal)}
-            >
-              {goal}
-            </button>
-          ))}
-        </div>
-      </aside>
     </main>
   )
 }
@@ -502,6 +787,7 @@ function GoalPanel({
 function PlanPanel({
   plan,
   loading,
+  generatingPlan,
   activeTaskId,
   setActiveTaskId,
   checkInTaskId,
@@ -509,9 +795,11 @@ function PlanPanel({
   checkInText,
   setCheckInText,
   onCheckIn,
+  onRefresh,
 }: {
-  plan: PlanResponse | null
+  plan: PlanResponse | ActivePlanResponse | null
   loading: boolean
+  generatingPlan: boolean
   activeTaskId: string | null
   setActiveTaskId: (id: string) => void
   checkInTaskId: string | null
@@ -519,27 +807,30 @@ function PlanPanel({
   checkInText: { whatDone: string; whatProduced: string; problems: string }
   setCheckInText: (value: { whatDone: string; whatProduced: string; problems: string }) => void
   onCheckIn: (taskId: string) => void
+  onRefresh: () => void
 }) {
   const allTasks = plan ? getAllTasks(plan) : []
-  const activeTask = allTasks.find((task) => task.id === activeTaskId) ?? allTasks[0]
+  const activeTask = allTasks.find((task) => task.id === activeTaskId) ?? allTasks.find((task) => task.status !== 'completed') ?? allTasks[0]
   const activeIndex = activeTask ? allTasks.findIndex((task) => task.id === activeTask.id) : -1
 
-  if (loading && !plan) {
-    return (
-      <main className="rounded-[28px] border border-line bg-white/80 p-10 text-center shadow-paper">
-        <Loader2 className="mx-auto animate-spin text-leaf" size={38} />
-        <h2 className="mt-4 text-2xl font-black">正在生成适合 Vibe Coding 的任务路径</h2>
-        <p className="mt-2 text-ink/65">系统会把每一步拆到 AI 能完整理解、稳定输出的颗粒度。</p>
-      </main>
-    )
+  if (generatingPlan) {
+    return <GeneratingPlanPanel />
   }
 
   if (!plan) {
     return (
       <main className="rounded-[28px] border border-line bg-white/80 p-8 text-center shadow-paper">
         <Map className="mx-auto text-leaf" size={34} />
-        <h2 className="mt-4 text-2xl font-black">还没有任务路径</h2>
-        <p className="mt-2 text-ink/65">先保存标签并输入目标，LeavesFlow 会生成一条可打卡的路径。</p>
+        <h2 className="mt-4 text-2xl font-black">还没有未完成任务路径</h2>
+        <p className="mt-2 text-ink/65">生成路径后会持久化保存；刷新页面也会自动恢复未完成内容。</p>
+        <button
+          className="soft-focus-ring mt-5 inline-flex items-center gap-2 rounded-2xl border border-line bg-paper px-5 py-3 text-sm font-black"
+          onClick={onRefresh}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="animate-spin" size={17} /> : <Route size={17} />}
+          恢复未完成路径
+        </button>
       </main>
     )
   }
@@ -566,28 +857,58 @@ function PlanPanel({
                 {stage.title}
               </h2>
               <div className="relative grid gap-4 pl-8 before:absolute before:left-[15px] before:top-2 before:h-[calc(100%-8px)] before:w-px before:bg-leaf/24">
-                {stage.tasks.map((task) => {
-                  const expanded = activeTask?.id === task.id
-                  return (
-                    <RouteTaskNode
-                      key={task.id}
-                      task={{ ...task, stageTitle: stage.title }}
-                      expanded={expanded}
-                      checkInTaskId={checkInTaskId}
-                      checkInText={checkInText}
-                      loading={loading}
-                      setCheckInTaskId={setCheckInTaskId}
-                      setCheckInText={setCheckInText}
-                      onCheckIn={onCheckIn}
-                      onSelect={() => setActiveTaskId(task.id)}
-                    />
-                  )
-                })}
+                {stage.tasks.map((task) => (
+                  <RouteTaskNode
+                    key={task.id}
+                    task={{ ...task, stageTitle: stage.title }}
+                    expanded={activeTask?.id === task.id}
+                    checkInTaskId={checkInTaskId}
+                    checkInText={checkInText}
+                    loading={loading}
+                    setCheckInTaskId={setCheckInTaskId}
+                    setCheckInText={setCheckInText}
+                    onCheckIn={onCheckIn}
+                    onSelect={() => setActiveTaskId(task.id)}
+                  />
+                ))}
               </div>
             </div>
           ))}
         </div>
       </section>
+    </main>
+  )
+}
+
+function GeneratingPlanPanel() {
+  const steps = ['读取目标', '注入画像', '拆解阶段', '生成节点']
+
+  return (
+    <main className="rounded-[28px] border border-line bg-white/80 p-6 text-center shadow-paper sm:p-10">
+      <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] border border-leaf/30 bg-mint/70 shadow-soft">
+        <Loader2 className="animate-spin text-leaf" size={38} />
+      </div>
+      <h2 className="mt-5 text-2xl font-black">正在生成适合 Vibe Coding 的任务路径</h2>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-ink/65">
+        LeavesFlow 正在把你的目标、基础画像和本次任务设置转成可执行、可打卡、可验证的任务导航。
+      </p>
+      <div className="mx-auto mt-6 grid max-w-2xl gap-2 sm:grid-cols-4">
+        {steps.map((step, index) => (
+          <div
+            key={step}
+            className="generation-step rounded-2xl border border-line bg-paper/70 px-3 py-4 text-sm font-black text-ink/72"
+            style={{ animationDelay: `${index * 180}ms` }}
+          >
+            <span className="mx-auto mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-mint text-xs text-leaf">
+              {index + 1}
+            </span>
+            {step}
+          </div>
+        ))}
+      </div>
+      <div className="mx-auto mt-6 h-2 max-w-lg overflow-hidden rounded-full bg-line/70">
+        <div className="generation-bar h-full rounded-full bg-leaf" />
+      </div>
     </main>
   )
 }
@@ -836,7 +1157,7 @@ function CheckInForm({
         ].map(([key, label]) => (
           <textarea
             key={key}
-            className="soft-focus-ring min-h-20 resize-none rounded-2xl border border-line bg-white/80 p-3 text-sm"
+            className="soft-focus-ring min-h-20 resize-none rounded-2xl border border-line bg-white/80 p-3 text-sm placeholder:text-ink/35"
             placeholder={label}
             value={value[key as keyof typeof value]}
             onChange={(event) => setValue({ ...value, [key]: event.target.value })}
@@ -917,19 +1238,19 @@ function SkillPanel({
             <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">{skills.length} 项</span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {skills.map((skill) => (
-            <button
-              key={skill.id}
-              className="soft-focus-ring flex min-h-[76px] items-center justify-between gap-3 rounded-2xl border border-line bg-paper/74 p-4 text-left shadow-soft transition hover:border-leaf/55 hover:bg-white/82"
-              onClick={() => setSelectedSkillId(skill.id)}
-            >
-              <div className="min-w-0">
-                <h3 className="truncate text-base font-black">{skill.name}</h3>
-                <p className="mt-1 text-xs font-bold text-ink/56">{skill.level} · 使用 {skill.count} 次</p>
-              </div>
-              <Eye className="shrink-0 text-leaf" size={18} />
-            </button>
-          ))}
+            {skills.map((skill) => (
+              <button
+                key={skill.id}
+                className="soft-focus-ring flex min-h-[76px] items-center justify-between gap-3 rounded-2xl border border-line bg-paper/74 p-4 text-left shadow-soft transition hover:border-leaf/55 hover:bg-white/82"
+                onClick={() => setSelectedSkillId(skill.id)}
+              >
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-black">{skill.name}</h3>
+                  <p className="mt-1 text-xs font-bold text-ink/56">{skill.level} · 使用 {skill.count} 次</p>
+                </div>
+                <Eye className="shrink-0 text-leaf" size={18} />
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -982,6 +1303,107 @@ function SkillDetailPanel({ skill, onBack }: { skill: SkillTag; onBack: () => vo
       <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-soft sm:p-5">
         <h2 className="text-lg font-black">来源说明</h2>
         <p className="mt-3 text-sm leading-7 text-ink/68">{skill.evidence}</p>
+      </section>
+    </main>
+  )
+}
+
+function UserPanel({
+  me,
+  categories,
+  profile,
+  expandedTags,
+  loading,
+  onExpand,
+  onSelect,
+  onSaveProfile,
+  onSaveDisplayName,
+  onLogout,
+}: {
+  me: MeResponse
+  categories: TagOptionCategory[]
+  profile: UserTagProfileIds
+  expandedTags: Record<string, boolean>
+  loading: boolean
+  onExpand: (id: string) => void
+  onSelect: (category: TagOptionCategory, optionId: string) => void
+  onSaveProfile: () => void
+  onSaveDisplayName: (displayName: string) => void
+  onLogout: () => void
+}) {
+  const [displayName, setDisplayName] = useState(me.user.displayName)
+
+  useEffect(() => {
+    setDisplayName(me.user.displayName)
+  }, [me.user.displayName])
+
+  return (
+    <main className="grid gap-4">
+      <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
+        <BrandMark />
+        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-leaf">账号中心</p>
+            <h1 className="mt-1 text-3xl font-black">{me.user.displayName}</h1>
+            <p className="mt-2 text-sm leading-6 text-ink/64">@{me.user.username} · 账号数据已持久化保存</p>
+          </div>
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
+            onClick={onLogout}
+          >
+            <LogOut size={17} />
+            退出登录
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+        <h2 className="flex items-center gap-2 text-lg font-black">
+          <UserRound size={18} className="text-leaf" />
+          编辑信息
+        </h2>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <input
+            className="soft-focus-ring min-w-0 flex-1 rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+          />
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:opacity-60"
+            disabled={loading || !displayName.trim()}
+            onClick={() => onSaveDisplayName(displayName)}
+          >
+            {loading ? <Loader2 className="animate-spin" size={17} /> : <CheckCircle2 size={17} />}
+            保存信息
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-black">
+              <Tags size={18} className="text-leaf" />
+              基础画像
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-ink/64">身份、专业背景、能力阶段只保存在用户层，后续任务会自动继承。</p>
+          </div>
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl bg-peach px-5 py-3 text-sm font-black text-ink shadow-soft disabled:opacity-60"
+            disabled={loading}
+            onClick={onSaveProfile}
+          >
+            {loading ? <Loader2 className="animate-spin" size={17} /> : <CheckCircle2 size={17} />}
+            保存画像
+          </button>
+        </div>
+        <TagCategoryList
+          categories={categories}
+          profile={profile}
+          expandedTags={expandedTags}
+          onExpand={onExpand}
+          onSelect={onSelect}
+        />
       </section>
     </main>
   )

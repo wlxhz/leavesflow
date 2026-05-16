@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+import hashlib
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -16,31 +18,40 @@ from .bootstrap import create_tables, seed_demo_data
 from .config import Settings, get_settings
 from .database import SessionLocal, get_db
 from .errors import AppError, error_response
-from .models import Goal, SkillTag, TaskCheckIn, TaskNode
+from .models import Goal, SkillTag, TaskCheckIn, TaskNode, User
 from .schemas import (
+    ActivePlanResponse,
+    AuthResponse,
     CheckInRequest,
     CheckInResponse,
     CreateGoalRequest,
     CreateGoalResponse,
     GeneratePlanRequest,
     GoalDetailResponse,
+    LoginRequest,
     MeResponse,
     PlanResponse,
+    RegisterRequest,
     SkillTagOut,
     TagOptionsResponse,
+    UpdateMeRequest,
     UpdateTagProfileResponse,
+    UserOut,
     UserTagProfileIds,
 )
 from .services import (
+    current_active_plan,
     current_profile_ids,
     current_profile_out,
     list_tag_options,
+    mark_goal_completed_if_needed,
     merge_skill_tags,
     persist_plan,
     plan_to_response,
     profile_ids_to_out,
     tag_context_for_profile,
     update_profile,
+    validate_required_profile_ids,
 )
 from .utils import dumps_json, loads_json, new_id, utc_now
 
@@ -97,9 +108,73 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _hash_password(password: str, salt: str | None = None) -> str:
+    password_salt = salt or secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), password_salt.encode("utf-8"), 120_000)
+    return f"pbkdf2_sha256${password_salt}${digest.hex()}"
+
+
+def _verify_password(password: str, password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    try:
+        algorithm, salt, expected = password_hash.split("$", 2)
+    except ValueError:
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    actual = _hash_password(password, salt).rsplit("$", 1)[1]
+    return secrets.compare_digest(actual, expected)
+
+
+def _new_auth_token() -> str:
+    return f"lf_{secrets.token_urlsafe(32)}"
+
+
+def _user_out(user: User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        username=user.username or "",
+        displayName=user.display_name or user.username or "LeavesFlow 用户",
+        createdAt=user.created_at,
+    )
+
+
+@app.post("/api/v1/auth/register", response_model=AuthResponse, status_code=201)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
+    validate_required_profile_ids(db, payload.profile, ["identityTagIds", "backgroundTagIds", "levelTagIds"])
+    if db.scalar(select(User.id).where(User.username == payload.username)):
+        raise AppError(409, "CONFLICT", "用户名已被注册")
+    now = utc_now()
+    token = _new_auth_token()
+    user = User(
+        id=new_id(),
+        username=payload.username,
+        display_name=payload.displayName or payload.username,
+        password_hash=_hash_password(payload.password),
+        auth_token=token,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(user)
+    db.commit()
+    profile = update_profile(db, user.id, payload.profile)
+    return AuthResponse(token=token, user=_user_out(user), tagProfile=profile)
+
+
+@app.post("/api/v1/auth/login", response_model=AuthResponse)
+def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
+    user = db.scalar(select(User).where(User.username == payload.username))
+    if not user or not _verify_password(payload.password, user.password_hash):
+        raise AppError(401, "UNAUTHORIZED", "用户名或密码错误")
+    user.auth_token = _new_auth_token()
+    user.updated_at = utc_now()
+    db.commit()
+    return AuthResponse(token=user.auth_token or "", user=_user_out(user), tagProfile=current_profile_out(db, user.id))
+
+
 @app.get("/api/v1/tag-options", response_model=TagOptionsResponse)
 def get_tag_options(
-    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> TagOptionsResponse:
     return TagOptionsResponse(categories=list_tag_options(db))
@@ -110,11 +185,15 @@ def get_me(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> MeResponse:
+    user = db.get(User, user_id)
+    if not user:
+        raise AppError(401, "UNAUTHORIZED", "用户不存在")
     skill_rows = db.scalars(
         select(SkillTag).where(SkillTag.user_id == user_id).order_by(SkillTag.updated_at.desc())
     ).all()
     return MeResponse(
         userId=user_id,
+        user=_user_out(user),
         tagProfile=current_profile_out(db, user_id),
         skillTags=[
             SkillTagOut(
@@ -130,7 +209,23 @@ def get_me(
             )
             for row in skill_rows
         ],
+        activePlan=current_active_plan(db, user_id),
     )
+
+
+@app.put("/api/v1/me", response_model=MeResponse)
+def update_me(
+    payload: UpdateMeRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> MeResponse:
+    user = db.get(User, user_id)
+    if not user:
+        raise AppError(401, "UNAUTHORIZED", "用户不存在")
+    user.display_name = payload.displayName.strip()
+    user.updated_at = utc_now()
+    db.commit()
+    return get_me(user_id, db)
 
 
 @app.put("/api/v1/me/tag-profile", response_model=UpdateTagProfileResponse)
@@ -139,7 +234,17 @@ def put_tag_profile(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> UpdateTagProfileResponse:
-    return UpdateTagProfileResponse(tagProfile=update_profile(db, user_id, payload))
+    validate_required_profile_ids(db, payload, ["identityTagIds", "backgroundTagIds", "levelTagIds"])
+    current = current_profile_ids(db, user_id)
+    merged = UserTagProfileIds(
+        identityTagIds=payload.identityTagIds,
+        backgroundTagIds=payload.backgroundTagIds,
+        levelTagIds=payload.levelTagIds,
+        goalTypeTagIds=current.goalTypeTagIds,
+        timeRangeTagIds=current.timeRangeTagIds,
+        outputPreferenceTagIds=current.outputPreferenceTagIds,
+    )
+    return UpdateTagProfileResponse(tagProfile=update_profile(db, user_id, merged))
 
 
 @app.post("/api/v1/goals", response_model=CreateGoalResponse, status_code=201)
@@ -148,7 +253,19 @@ def create_goal(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ) -> CreateGoalResponse:
-    profile_ids = payload.profileSnapshot or current_profile_ids(db, user_id)
+    base_profile = current_profile_ids(db, user_id)
+    if payload.profileSnapshot:
+        profile_ids = UserTagProfileIds(
+            identityTagIds=base_profile.identityTagIds,
+            backgroundTagIds=base_profile.backgroundTagIds,
+            levelTagIds=base_profile.levelTagIds,
+            goalTypeTagIds=payload.profileSnapshot.goalTypeTagIds,
+            timeRangeTagIds=payload.profileSnapshot.timeRangeTagIds,
+            outputPreferenceTagIds=payload.profileSnapshot.outputPreferenceTagIds,
+        )
+    else:
+        profile_ids = base_profile
+    validate_required_profile_ids(db, profile_ids, ["identityTagIds", "backgroundTagIds", "levelTagIds"])
     profile_out = profile_ids_to_out(db, profile_ids)
     now = utc_now()
     title = payload.rawInput.strip()[:80]
@@ -229,6 +346,17 @@ def get_plan(
     return plan
 
 
+@app.get("/api/v1/me/active-plan", response_model=ActivePlanResponse)
+def get_active_plan(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> ActivePlanResponse:
+    plan = current_active_plan(db, user_id)
+    if not plan:
+        raise AppError(404, "NOT_FOUND", "当前没有未完成任务路径")
+    return plan
+
+
 @app.post("/api/v1/tasks/{task_id}/check-ins", response_model=CheckInResponse, status_code=201)
 def create_check_in(
     task_id: str,
@@ -279,6 +407,7 @@ def create_check_in(
         db.add(check_in)
         task.status = "completed"
         skills = merge_skill_tags(db, user_id, goal.id, task.id, extraction.newSkillTags)
+        mark_goal_completed_if_needed(db, goal)
         db.commit()
     except IntegrityError as exc:
         db.rollback()

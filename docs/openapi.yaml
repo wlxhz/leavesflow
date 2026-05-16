@@ -28,35 +28,27 @@
         }
       }
     },
-    "/api/v1/tag-options": {
-      "get": {
-        "summary": "Get Tag Options",
-        "operationId": "get_tag_options_api_v1_tag_options_get",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Authorization"
+    "/api/v1/auth/register": {
+      "post": {
+        "summary": "Register",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TagOptionsResponse"
+                  "$ref": "#/components/schemas/AuthResponse"
                 }
               }
             }
@@ -67,6 +59,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tag-options": {
+      "get": {
+        "summary": "Get Tag Options",
+        "operationId": "get_tag_options_api_v1_tag_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagOptionsResponse"
                 }
               }
             }
@@ -96,6 +144,60 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update Me",
+        "operationId": "update_me_api_v1_me_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -407,6 +509,52 @@
         }
       }
     },
+    "/api/v1/me/active-plan": {
+      "get": {
+        "summary": "Get Active Plan",
+        "operationId": "get_active_plan_api_v1_me_active_plan_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivePlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/tasks/{task_id}/check-ins": {
       "post": {
         "summary": "Create Check In",
@@ -475,6 +623,82 @@
   },
   "components": {
     "schemas": {
+      "ActivePlanResponse": {
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "title": "Goalid"
+          },
+          "goalTitle": {
+            "type": "string",
+            "title": "Goaltitle"
+          },
+          "goalSummary": {
+            "type": "string",
+            "title": "Goalsummary"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "completedTasks": {
+            "type": "integer",
+            "title": "Completedtasks"
+          },
+          "totalTasks": {
+            "type": "integer",
+            "title": "Totaltasks"
+          },
+          "isComplete": {
+            "type": "boolean",
+            "title": "Iscomplete"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageOut"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goalId",
+          "goalTitle",
+          "goalSummary",
+          "status",
+          "completedTasks",
+          "totalTasks",
+          "isComplete",
+          "stages"
+        ],
+        "title": "ActivePlanResponse"
+      },
+      "AuthResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          },
+          "tagProfile": {
+            "$ref": "#/components/schemas/UserTagProfileOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "user",
+          "tagProfile"
+        ],
+        "title": "AuthResponse"
+      },
       "CheckInRequest": {
         "properties": {
           "whatDone": {
@@ -734,11 +958,36 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 3,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
       "MeResponse": {
         "properties": {
           "userId": {
             "type": "string",
             "title": "Userid"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
           },
           "tagProfile": {
             "$ref": "#/components/schemas/UserTagProfileOut"
@@ -749,11 +998,22 @@
             },
             "type": "array",
             "title": "Skilltags"
+          },
+          "activePlan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivePlanResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "required": [
           "userId",
+          "user",
           "tagProfile",
           "skillTags"
         ],
@@ -790,6 +1050,44 @@
         ],
         "title": "PlanResponse"
       },
+      "RegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 3,
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 6,
+            "title": "Password"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/UserTagProfileIds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password",
+          "profile"
+        ],
+        "title": "RegisterRequest"
+      },
       "ResourceRecommendation": {
         "properties": {
           "title": {
@@ -798,9 +1096,6 @@
           },
           "url": {
             "type": "string",
-            "maxLength": 2083,
-            "minLength": 1,
-            "format": "uri",
             "title": "Url"
           },
           "description": {
@@ -1113,9 +1408,6 @@
           },
           "url": {
             "type": "string",
-            "maxLength": 2083,
-            "minLength": 1,
-            "format": "uri",
             "title": "Url"
           }
         },
@@ -1126,6 +1418,21 @@
           "url"
         ],
         "title": "ToolRecommendation"
+      },
+      "UpdateMeRequest": {
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Displayname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "displayName"
+        ],
+        "title": "UpdateMeRequest"
       },
       "UpdateTagProfileResponse": {
         "properties": {
@@ -1138,6 +1445,34 @@
           "tagProfile"
         ],
         "title": "UpdateTagProfileResponse"
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayName": {
+            "type": "string",
+            "title": "Displayname"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "createdAt"
+        ],
+        "title": "UserOut"
       },
       "UserTagProfileIds": {
         "properties": {

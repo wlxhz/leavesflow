@@ -19,6 +19,8 @@ DECOMPOSITION_SYSTEM_PROMPT = """你是 LeavesFlow 的 AI 任务导航与 Vibe C
 8. 推荐工具和资源必须服务于当前任务，不要堆砌。
 9. 输出应该帮助用户一步步完成真实交付，而不是只得到学习建议。
 10. 所有任务都应适合用户在 AI 编程或 AI 协作环境中逐步推进。
+11. 推荐工具和资源必须是真实可访问、当前任务中可直接调用或参考的 URL，禁止使用 example.com、占位链接、无意义官网堆砌或不可访问的虚构链接。
+12. 每个任务节点的 tools 至少包含 1 个真实可调用工具，resources 至少包含 1 个真实参考资源；如果某节点确实不需要外部资源，也要给出 LeavesFlow 用户可实际打开并用于完成任务的通用工作入口或官方文档。
 
 你必须输出如下 JSON 结构：
 {
@@ -46,7 +48,7 @@ DECOMPOSITION_SYSTEM_PROMPT = """你是 LeavesFlow 的 AI 任务导航与 Vibe C
   ]
 }
 
-字段要求：stages 非空；每个 stage.tasks 非空；contextForAI、vibeCodingPrompt、expectedOutput 必填；path 和 completionCriteria 至少包含 1 项；tools、resources、skillTags 可为空数组；所有 URL 必须是合法 URI；不要输出 JSON 以外的任何内容。"""
+字段要求：stages 非空；每个 stage.tasks 非空；contextForAI、vibeCodingPrompt、expectedOutput 必填；path 和 completionCriteria 至少包含 1 项；tools 至少 1 项；resources 至少 1 项；skillTags 可为空数组；所有 URL 必须是可真实打开的 http/https URL，不能是 example.com 或占位链接；不要输出 JSON 以外的任何内容。"""
 
 SKILL_EXTRACTION_SYSTEM_PROMPT = """你是 LeavesFlow 的能力 Prompt 提炼助手。
 

@@ -20,7 +20,7 @@ class DatabaseConfig(BaseModel):
 
 
 class OpenAICompatibleConfig(BaseModel):
-    base_url: str = "https://example-openai-relay/v1"
+    base_url: str = ""
     api_key: str = ""
     chat_model: str = "gpt-4o-mini"
     timeout_seconds: int = Field(default=120, ge=30, le=600)
@@ -55,10 +55,6 @@ class Settings(BaseModel):
     cors: CORSConfig = Field(default_factory=CORSConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
-
-    @property
-    def mock_ai_enabled(self) -> bool:
-        return self.app.env == "dev" and not self.openai_compatible.api_key.strip()
 
 
 def _repo_root() -> Path:

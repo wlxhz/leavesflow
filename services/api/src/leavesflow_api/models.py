@@ -8,8 +8,13 @@ from .database import Base
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("username", name="uq_users_username"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    username: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auth_token: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 

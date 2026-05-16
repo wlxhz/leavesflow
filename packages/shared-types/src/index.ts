@@ -61,10 +61,32 @@ export interface SkillTag {
   updatedAt: string
 }
 
+export interface UserAccount {
+  id: string
+  username: string
+  displayName: string
+  createdAt: string
+}
+
+export interface ActivePlanResponse extends PlanResponse {
+  status: GoalStatus
+  completedTasks: number
+  totalTasks: number
+  isComplete: boolean
+}
+
 export interface MeResponse {
   userId: string
+  user: UserAccount
   tagProfile: UserTagProfile
   skillTags: SkillTag[]
+  activePlan?: ActivePlanResponse | null
+}
+
+export interface AuthResponse {
+  token: string
+  user: UserAccount
+  tagProfile: UserTagProfile
 }
 
 export interface ToolRecommendation {

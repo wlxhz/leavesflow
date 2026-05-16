@@ -1,5 +1,7 @@
 import type {
+  ActivePlanResponse,
   ApiErrorBody,
+  AuthResponse,
   CheckInResponse,
   CreateGoalResponse,
   MeResponse,
@@ -13,19 +15,21 @@ export class LeavesFlowApiError extends Error {
   code: string
   requestId: string
   details: unknown
+  status: number
 
-  constructor(body: ApiErrorBody) {
+  constructor(body: ApiErrorBody, status: number) {
     super(body.error.message)
     this.name = 'LeavesFlowApiError'
     this.code = body.error.code
     this.requestId = body.error.requestId
     this.details = body.error.details
+    this.status = status
   }
 }
 
 export interface LeavesFlowClientOptions {
   baseUrl: string
-  token: string
+  token?: string
 }
 
 export class LeavesFlowClient {
@@ -34,7 +38,27 @@ export class LeavesFlowClient {
 
   constructor(options: LeavesFlowClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, '')
-    this.token = options.token
+    this.token = options.token ?? ''
+  }
+
+  setToken(token: string) {
+    this.token = token
+  }
+
+  register(payload: { username: string; password: string; displayName?: string; profile: UserTagProfileIds }) {
+    return this.request<AuthResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      auth: false,
+    })
+  }
+
+  login(payload: { username: string; password: string }) {
+    return this.request<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      auth: false,
+    })
   }
 
   getTagOptions() {
@@ -47,6 +71,13 @@ export class LeavesFlowClient {
 
   updateTagProfile(payload: UserTagProfileIds) {
     return this.request<{ tagProfile: UserTagProfile }>('/me/tag-profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  updateMe(payload: { displayName: string }) {
+    return this.request<MeResponse>('/me', {
       method: 'PUT',
       body: JSON.stringify(payload),
     })
@@ -70,6 +101,10 @@ export class LeavesFlowClient {
     return this.request<PlanResponse>(`/goals/${goalId}/plan`)
   }
 
+  getActivePlan() {
+    return this.request<ActivePlanResponse>('/me/active-plan')
+  }
+
   createCheckIn(
     taskId: string,
     payload: { whatDone?: string; whatProduced?: string; problems?: string },
@@ -80,19 +115,21 @@ export class LeavesFlowClient {
     })
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, init: RequestInit & { auth?: boolean } = {}): Promise<T> {
+    const useAuth = init.auth !== false
+    const { auth: _auth, ...requestInit } = init
     const response = await fetch(`${this.baseUrl}${path}`, {
-      ...init,
+      ...requestInit,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        Authorization: `Bearer ${this.token}`,
+        ...(useAuth && this.token ? { Authorization: `Bearer ${this.token}` } : {}),
         ...(init.headers ?? {}),
       },
     })
 
     if (!response.ok) {
       const body = (await response.json()) as ApiErrorBody
-      throw new LeavesFlowApiError(body)
+      throw new LeavesFlowApiError(body, response.status)
     }
     return (await response.json()) as T
   }

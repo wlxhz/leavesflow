@@ -50,3 +50,36 @@ button {
   -webkit-line-clamp: 6;
   overflow: hidden;
 }
+
+.generation-step {
+  animation: generation-pulse 1.35s ease-in-out infinite;
+}
+
+.generation-bar {
+  width: 42%;
+  animation: generation-sweep 1.35s ease-in-out infinite;
+}
+
+@keyframes generation-pulse {
+  0%,
+  100% {
+    opacity: 0.56;
+    transform: translateY(0);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes generation-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  55% {
+    transform: translateX(84%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}

@@ -12,6 +12,21 @@ from .utils import dumps_json, new_id, utc_now
 
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_users_table()
+
+
+def _migrate_users_table() -> None:
+    required_columns = {
+        "username": "VARCHAR",
+        "display_name": "VARCHAR",
+        "password_hash": "TEXT",
+        "auth_token": "VARCHAR",
+    }
+    with engine.begin() as connection:
+        existing = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(users)").fetchall()}
+        for column, column_type in required_columns.items():
+            if column not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {column} {column_type}")
 
 
 def seed_demo_data(db: Session) -> None:
@@ -20,7 +35,25 @@ def seed_demo_data(db: Session) -> None:
 
     user = db.get(User, settings.app.demo_user_id)
     if not user:
-        db.add(User(id=settings.app.demo_user_id, created_at=now, updated_at=now))
+        db.add(
+            User(
+                id=settings.app.demo_user_id,
+                username="demo",
+                display_name="Demo 用户",
+                password_hash=None,
+                auth_token=settings.app.demo_bearer_token,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    else:
+        if not user.username:
+            user.username = "demo"
+        if not user.display_name:
+            user.display_name = "Demo 用户"
+        if not user.auth_token:
+            user.auth_token = settings.app.demo_bearer_token
+        user.updated_at = now
 
     profile = db.get(UserTagProfile, settings.app.demo_user_id)
     if not profile:
