@@ -1,0 +1,38 @@
+{
+  "app": {
+    "name": "leavesflow-api",
+    "env": "dev",
+    "demo_bearer_token": "dev-demo-token",
+    "demo_user_id": "7d4c8b54-9797-4e70-96fa-2d8c2d3d4a10"
+  },
+  "database": {
+    "url": "sqlite:///./data/leavesflow.db"
+  },
+  "openai_compatible": {
+    "base_url": "https://example-openai-relay/v1",
+    "api_key": "",
+    "chat_model": "gpt-4o-mini",
+    "timeout_seconds": 120,
+    "max_retries": 2
+  },
+  "ai": {
+    "decomposition_temperature": 0.3,
+    "skill_extraction_temperature": 0.2,
+    "json_mode": true
+  },
+  "cors": {
+    "allow_origins": [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "https://leavesflow.syt.huickathon.cn"
+    ]
+  },
+  "mcp": {
+    "enabled": false,
+    "servers": []
+  },
+  "skills": {
+    "enabled": false,
+    "registry_path": "./skills/registry.yaml"
+  }
+}

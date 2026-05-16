@@ -1,0 +1,16 @@
+{
+  "name": "leavesflow-app",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @leavesflow/web run dev",
+    "build:web": "npm --workspace @leavesflow/web run build",
+    "typecheck": "npm --workspace @leavesflow/web run typecheck",
+    "lint": "npm --workspace @leavesflow/web run lint"
+  },
+  "devDependencies": {}
+}

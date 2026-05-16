@@ -1,0 +1,16 @@
+{
+  "name": "LeavesFlow",
+  "short_name": "LeavesFlow",
+  "description": "AI 任务导航与能力 Prompt 沉淀",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fffaf3",
+  "theme_color": "#f5b8a6",
+  "icons": [
+    {
+      "src": "/leaf.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

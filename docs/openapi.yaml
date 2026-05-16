@@ -1,0 +1,1273 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LeavesFlow API",
+    "description": "LeavesFlow MVP V1 API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_api_v1_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Api V1 Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tag-options": {
+      "get": {
+        "summary": "Get Tag Options",
+        "operationId": "get_tag_options_api_v1_tag_options_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagOptionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "summary": "Get Me",
+        "operationId": "get_me_api_v1_me_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/tag-profile": {
+      "put": {
+        "summary": "Put Tag Profile",
+        "operationId": "put_tag_profile_api_v1_me_tag_profile_put",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTagProfileIds"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateTagProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/goals": {
+      "post": {
+        "summary": "Create Goal",
+        "operationId": "create_goal_api_v1_goals_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGoalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateGoalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/goals/{goal_id}/plan:generate": {
+      "post": {
+        "summary": "Generate Plan",
+        "operationId": "generate_plan_api_v1_goals__goal_id__plan_generate_post",
+        "parameters": [
+          {
+            "name": "goal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Goal Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/goals/{goal_id}": {
+      "get": {
+        "summary": "Get Goal",
+        "operationId": "get_goal_api_v1_goals__goal_id__get",
+        "parameters": [
+          {
+            "name": "goal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Goal Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoalDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/goals/{goal_id}/plan": {
+      "get": {
+        "summary": "Get Plan",
+        "operationId": "get_plan_api_v1_goals__goal_id__plan_get",
+        "parameters": [
+          {
+            "name": "goal_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Goal Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/check-ins": {
+      "post": {
+        "summary": "Create Check In",
+        "operationId": "create_check_in_api_v1_tasks__task_id__check_ins_post",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CheckInRequest": {
+        "properties": {
+          "whatDone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatdone"
+          },
+          "whatProduced": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatproduced"
+          },
+          "problems": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problems"
+          }
+        },
+        "type": "object",
+        "title": "CheckInRequest"
+      },
+      "CheckInResponse": {
+        "properties": {
+          "checkInId": {
+            "type": "string",
+            "title": "Checkinid"
+          },
+          "taskNodeId": {
+            "type": "string",
+            "title": "Tasknodeid"
+          },
+          "newSkillTags": {
+            "items": {
+              "$ref": "#/components/schemas/CheckInSkillOut"
+            },
+            "type": "array",
+            "title": "Newskilltags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkInId",
+          "taskNodeId",
+          "newSkillTags"
+        ],
+        "title": "CheckInResponse"
+      },
+      "CheckInSkillOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "入门",
+              "进阶",
+              "熟练"
+            ],
+            "title": "Level"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "level",
+          "prompt",
+          "source",
+          "reason"
+        ],
+        "title": "CheckInSkillOut"
+      },
+      "CreateGoalRequest": {
+        "properties": {
+          "rawInput": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Rawinput"
+          },
+          "profileSnapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserTagProfileIds"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "rawInput"
+        ],
+        "title": "CreateGoalRequest"
+      },
+      "CreateGoalResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rawInput": {
+            "type": "string",
+            "title": "Rawinput"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "profileSnapshot": {
+            "$ref": "#/components/schemas/UserTagProfileOut"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "rawInput",
+          "status",
+          "profileSnapshot",
+          "createdAt"
+        ],
+        "title": "CreateGoalResponse"
+      },
+      "GeneratePlanRequest": {
+        "properties": {},
+        "type": "object",
+        "title": "GeneratePlanRequest"
+      },
+      "GoalDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rawInput": {
+            "type": "string",
+            "title": "Rawinput"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "goalSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goalsummary"
+          },
+          "profileSnapshot": {
+            "$ref": "#/components/schemas/UserTagProfileOut"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "rawInput",
+          "status",
+          "goalSummary",
+          "profileSnapshot",
+          "createdAt",
+          "plan"
+        ],
+        "title": "GoalDetailResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MeResponse": {
+        "properties": {
+          "userId": {
+            "type": "string",
+            "title": "Userid"
+          },
+          "tagProfile": {
+            "$ref": "#/components/schemas/UserTagProfileOut"
+          },
+          "skillTags": {
+            "items": {
+              "$ref": "#/components/schemas/SkillTagOut"
+            },
+            "type": "array",
+            "title": "Skilltags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userId",
+          "tagProfile",
+          "skillTags"
+        ],
+        "title": "MeResponse"
+      },
+      "PlanResponse": {
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "title": "Goalid"
+          },
+          "goalTitle": {
+            "type": "string",
+            "title": "Goaltitle"
+          },
+          "goalSummary": {
+            "type": "string",
+            "title": "Goalsummary"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageOut"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goalId",
+          "goalTitle",
+          "goalSummary",
+          "stages"
+        ],
+        "title": "PlanResponse"
+      },
+      "ResourceRecommendation": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Url"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "ResourceRecommendation"
+      },
+      "SelectedTagOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "promptText": {
+            "type": "string",
+            "title": "Prompttext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "promptText"
+        ],
+        "title": "SelectedTagOut"
+      },
+      "SkillTagOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "入门",
+              "进阶",
+              "熟练"
+            ],
+            "title": "Level"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "title": "Sourcetaskid"
+          },
+          "sourceGoalId": {
+            "type": "string",
+            "title": "Sourcegoalid"
+          },
+          "evidence": {
+            "type": "string",
+            "title": "Evidence"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "level",
+          "count",
+          "prompt",
+          "sourceTaskId",
+          "sourceGoalId",
+          "evidence",
+          "updatedAt"
+        ],
+        "title": "SkillTagOut"
+      },
+      "StageOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "title": "Sortorder"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/TaskNodeOut"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "sortOrder",
+          "tasks"
+        ],
+        "title": "StageOut"
+      },
+      "TagOptionCategoryOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/TagOptionOut"
+            },
+            "type": "array",
+            "title": "Options"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "options"
+        ],
+        "title": "TagOptionCategoryOut"
+      },
+      "TagOptionOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "promptText": {
+            "type": "string",
+            "title": "Prompttext"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "title": "Sortorder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "promptText",
+          "sortOrder"
+        ],
+        "title": "TagOptionOut"
+      },
+      "TagOptionsResponse": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/TagOptionCategoryOut"
+            },
+            "type": "array",
+            "title": "Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categories"
+        ],
+        "title": "TagOptionsResponse"
+      },
+      "TaskNodeOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "contextForAI": {
+            "type": "string",
+            "title": "Contextforai"
+          },
+          "vibeCodingPrompt": {
+            "type": "string",
+            "title": "Vibecodingprompt"
+          },
+          "expectedOutput": {
+            "type": "string",
+            "title": "Expectedoutput"
+          },
+          "pathSteps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pathsteps"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolRecommendation"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/ResourceRecommendation"
+            },
+            "type": "array",
+            "title": "Resources"
+          },
+          "completionCriteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Completioncriteria"
+          },
+          "predictedSkillTags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Predictedskilltags"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "title": "Sortorder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "contextForAI",
+          "vibeCodingPrompt",
+          "expectedOutput",
+          "pathSteps",
+          "tools",
+          "resources",
+          "completionCriteria",
+          "predictedSkillTags",
+          "status",
+          "sortOrder"
+        ],
+        "title": "TaskNodeOut"
+      },
+      "ToolRecommendation": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "usage": {
+            "type": "string",
+            "title": "Usage"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "usage",
+          "url"
+        ],
+        "title": "ToolRecommendation"
+      },
+      "UpdateTagProfileResponse": {
+        "properties": {
+          "tagProfile": {
+            "$ref": "#/components/schemas/UserTagProfileOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tagProfile"
+        ],
+        "title": "UpdateTagProfileResponse"
+      },
+      "UserTagProfileIds": {
+        "properties": {
+          "identityTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Identitytagids"
+          },
+          "backgroundTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Backgroundtagids"
+          },
+          "levelTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Leveltagids"
+          },
+          "goalTypeTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Goaltypetagids"
+          },
+          "timeRangeTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Timerangetagids"
+          },
+          "outputPreferenceTagIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Outputpreferencetagids"
+          }
+        },
+        "type": "object",
+        "title": "UserTagProfileIds"
+      },
+      "UserTagProfileOut": {
+        "properties": {
+          "identityTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Identitytags"
+          },
+          "backgroundTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Backgroundtags"
+          },
+          "levelTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Leveltags"
+          },
+          "goalTypeTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Goaltypetags"
+          },
+          "timeRangeTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Timerangetags"
+          },
+          "outputPreferenceTags": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTagOut"
+            },
+            "type": "array",
+            "title": "Outputpreferencetags"
+          }
+        },
+        "type": "object",
+        "title": "UserTagProfileOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

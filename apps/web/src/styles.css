@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #34423a;
+  background: #fffaf3;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: "Nunito", "Noto Sans SC", ui-sans-serif, system-ui;
+  background:
+    linear-gradient(120deg, rgba(245, 184, 166, 0.24), transparent 32%),
+    linear-gradient(240deg, rgba(126, 175, 143, 0.2), transparent 36%),
+    #fffaf3;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.paper-texture {
+  background-image:
+    radial-gradient(rgba(126, 112, 80, 0.08) 0.7px, transparent 0.7px),
+    linear-gradient(rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.68));
+  background-size: 18px 18px, auto;
+}
+
+.soft-focus-ring:focus {
+  outline: 3px solid rgba(245, 184, 166, 0.55);
+  outline-offset: 2px;
+}
