@@ -28,6 +28,10 @@ textarea {
   font: inherit;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .paper-texture {
   background-image:
     radial-gradient(rgba(126, 112, 80, 0.08) 0.7px, transparent 0.7px),
@@ -38,4 +42,11 @@ textarea {
 .soft-focus-ring:focus {
   outline: 3px solid rgba(245, 184, 166, 0.55);
   outline-offset: 2px;
+}
+
+.line-clamp-6 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
 }

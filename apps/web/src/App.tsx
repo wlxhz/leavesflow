@@ -7,23 +7,41 @@ import type {
   UserTagProfileIds,
 } from '@leavesflow/shared-types'
 import {
+  ArrowLeft,
+  BadgeCheck,
   BookOpen,
   CheckCircle2,
   ChevronDown,
   Clipboard,
   Circle,
+  Copy,
+  ExternalLink,
+  Eye,
+  Flag,
   Leaf,
   Loader2,
   Map,
+  MapPin,
   PenLine,
   Route,
   Sparkles,
   Tags,
+  UserRound,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { api } from './api'
 
 type ViewKey = 'tags' | 'goal' | 'plan' | 'skills'
+type RouteTask = PlanResponse['stages'][number]['tasks'][number] & { stageTitle: string }
+type RecommendationKind = 'tool' | 'resource' | 'collaborator'
+
+declare global {
+  interface Window {
+    LeavesFlowNative?: {
+      openExternalUrl?: (payload: { url: string; title?: string; kind?: RecommendationKind }) => void
+    }
+  }
+}
 
 const emptyProfile: UserTagProfileIds = {
   identityTagIds: [],
@@ -45,6 +63,38 @@ const categoryToField: Record<TagOptionCategory['key'], keyof UserTagProfileIds>
 
 const quickGoals = ['做一个AI网站', '完成React项目', '学习AI产品设计', '准备互联网面试']
 
+function compactText(value: string, maxLength = 46) {
+  const text = value.trim()
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+}
+
+function getAllTasks(plan: PlanResponse): RouteTask[] {
+  return plan.stages.flatMap((stage) => stage.tasks.map((task) => ({ ...task, stageTitle: stage.title })))
+}
+
+function isValidHttpUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function openRecommendationUrl(url: string, title: string, kind: RecommendationKind) {
+  if (!isValidHttpUrl(url)) {
+    return
+  }
+
+  const mobileBridge = window.LeavesFlowNative?.openExternalUrl
+  if (mobileBridge) {
+    mobileBridge({ url, title, kind })
+    return
+  }
+
+  window.location.assign(url)
+}
+
 export function App() {
   const [view, setView] = useState<ViewKey>('tags')
   const [tagCategories, setTagCategories] = useState<TagOptionCategory[]>([])
@@ -56,6 +106,7 @@ export function App() {
   const [expandedTags, setExpandedTags] = useState<Record<string, boolean>>({})
   const [checkInTaskId, setCheckInTaskId] = useState<string | null>(null)
   const [checkInText, setCheckInText] = useState({ whatDone: '', whatProduced: '', problems: '' })
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -164,9 +215,8 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen text-ink">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <Header view={view} onViewChange={setView} completedCount={completedCount} totalTasks={totalTasks} />
+    <div className="min-h-screen pb-28 text-ink">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-4 sm:px-6 lg:px-8">
         {(message || error) && (
           <div
             className={`rounded-[20px] border px-4 py-3 text-sm shadow-soft ${
@@ -212,13 +262,22 @@ export function App() {
           />
         )}
 
-        {view === 'skills' && <SkillPanel skills={me?.skillTags ?? []} onRefresh={bootstrap} loading={loading} />}
+        {view === 'skills' && (
+          <SkillPanel
+            skills={me?.skillTags ?? []}
+            onRefresh={bootstrap}
+            loading={loading}
+            selectedSkillId={selectedSkillId}
+            setSelectedSkillId={setSelectedSkillId}
+          />
+        )}
       </div>
+      <BottomNav view={view} onViewChange={setView} completedCount={completedCount} totalTasks={totalTasks} />
     </div>
   )
 }
 
-function Header({
+function BottomNav({
   view,
   onViewChange,
   completedCount,
@@ -230,51 +289,54 @@ function Header({
   totalTasks: number
 }) {
   const items: Array<{ key: ViewKey; label: string; icon: typeof Tags }> = [
-    { key: 'tags', label: '标签选择', icon: Tags },
-    { key: 'goal', label: '目标输入', icon: PenLine },
-    { key: 'plan', label: '任务路径', icon: Route },
-    { key: 'skills', label: '我的技能标签', icon: Sparkles },
+    { key: 'tags', label: '标签', icon: Tags },
+    { key: 'goal', label: '目标', icon: PenLine },
+    { key: 'plan', label: '路径', icon: Route },
+    { key: 'skills', label: '技能', icon: Sparkles },
   ]
   return (
-    <header className="paper-texture rounded-[28px] border border-line/80 p-4 shadow-paper">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-mint text-leaf shadow-soft">
-            <Leaf size={26} />
-          </div>
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-leaf">LeavesFlow</p>
-            <h1 className="text-2xl font-black tracking-normal sm:text-3xl">把小目标养成可复用的能力 Prompt</h1>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:flex">
+    <nav className="fixed inset-x-0 bottom-3 z-50 px-3">
+      <div className="paper-texture mx-auto w-full max-w-[560px] rounded-[24px] border border-line/90 bg-white/92 p-2 shadow-paper backdrop-blur">
+        <div className="grid grid-cols-4 gap-1">
           {items.map((item) => {
             const Icon = item.icon
             const active = view === item.key
             return (
               <button
                 key={item.key}
-                className={`soft-focus-ring flex items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-sm font-bold transition ${
+                className={`soft-focus-ring flex min-w-0 items-center justify-center gap-1 rounded-[18px] px-1 py-2 text-[11px] font-black leading-tight transition sm:gap-2 sm:text-sm ${
                   active
-                    ? 'border-peach bg-peach/25 text-ink shadow-soft'
-                    : 'border-line bg-white/70 text-ink/70 hover:border-leaf/40 hover:text-ink'
+                    ? 'bg-ink text-white shadow-soft'
+                    : 'text-ink/62 hover:bg-white/80 hover:text-ink'
                 }`}
                 onClick={() => onViewChange(item.key)}
+                aria-current={active ? 'page' : undefined}
               >
-                <Icon size={17} />
-                {item.label}
+                <Icon size={18} className="shrink-0" />
+                <span className="truncate">{item.label}</span>
               </button>
             )
           })}
         </div>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/85">
+          <div
+            className="h-full rounded-full bg-leaf transition-all"
+            style={{ width: totalTasks ? `${Math.round((completedCount / totalTasks) * 100)}%` : '8%' }}
+          />
+        </div>
       </div>
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/80">
-        <div
-          className="h-full rounded-full bg-leaf transition-all"
-          style={{ width: totalTasks ? `${Math.round((completedCount / totalTasks) * 100)}%` : '8%' }}
-        />
+    </nav>
+  )
+}
+
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-2 text-leaf">
+      <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-mint">
+        <Leaf size={20} />
       </div>
-    </header>
+      <span className="text-xs font-black uppercase tracking-[0.18em]">LeavesFlow</span>
+    </div>
   )
 }
 
@@ -295,73 +357,78 @@ function TagProfilePanel({
   onSave: () => void
   loading: boolean
 }) {
+  const selectedCount = Object.values(profile).reduce((sum, ids) => sum + ids.length, 0)
+
   return (
-    <main className="grid gap-5 lg:grid-cols-[0.88fr_1.12fr]">
-      <section className="rounded-[24px] border border-line bg-white/78 p-6 shadow-paper">
-        <p className="text-sm font-bold text-leaf">标签不是几个字</p>
-        <h2 className="mt-2 text-3xl font-black">选择你的 Prompt 封装</h2>
-        <p className="mt-3 leading-7 text-ink/70">
-          每个标签背后都有一段可展开的上下文。AI 会用这些封装来理解你的背景、节奏和交付偏好。
+    <main className="grid gap-4">
+      <section className="rounded-[24px] border border-line bg-white/82 p-4 shadow-paper sm:p-5">
+        <BrandMark />
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-leaf">选择基础画像</p>
+            <h1 className="mt-1 text-2xl font-black sm:text-3xl">用几个标签校准任务路径</h1>
+          </div>
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loading}
+            onClick={onSave}
+          >
+            {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+            保存并继续
+          </button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-ink/64">
+          已选择 {selectedCount} 项。点开箭头可查看标签背后的 Prompt，当前版本只查看不编辑。
         </p>
-        <button
-          className="soft-focus-ring mt-6 inline-flex items-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={loading}
-          onClick={onSave}
-        >
-          {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
-          保存标签
-        </button>
       </section>
 
-      <section className="grid gap-4">
+      <section className="grid gap-3">
         {categories.map((category) => {
           const field = categoryToField[category.key]
           return (
-            <div key={category.key} className="rounded-[24px] border border-line bg-white/78 p-5 shadow-soft">
-              <h3 className="mb-4 flex items-center gap-2 text-lg font-black">
+            <div key={category.key} className="rounded-[22px] border border-line bg-white/78 p-3 shadow-soft sm:p-4">
+              <h2 className="mb-3 flex items-center gap-2 text-base font-black">
                 <Tags size={18} className="text-leaf" />
                 {category.name}
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2">
+              </h2>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 {category.options.map((option) => {
                   const selected = profile[field].includes(option.id)
                   const expanded = expandedTags[option.id]
                   return (
                     <div
                       key={option.id}
-                      className={`rounded-[18px] border p-3 transition ${
-                        selected ? 'border-leaf bg-mint/70' : 'border-line bg-paper/70'
+                      className={`overflow-hidden rounded-2xl border transition ${
+                        selected ? 'border-leaf bg-mint/72 shadow-soft' : 'border-line bg-paper/70 hover:border-leaf/45'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-h-[46px] items-center gap-1 px-2 py-1.5">
                         <button
-                          className="soft-focus-ring flex flex-1 items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-black"
+                          className="soft-focus-ring flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-black"
                           onClick={() => onSelect(category, option.id)}
                           aria-pressed={selected}
+                          aria-label={`${selected ? '取消选择' : '选择'}${option.label}`}
                         >
                           {selected ? (
                             <CheckCircle2 className="shrink-0 text-leaf" size={17} />
                           ) : (
                             <Circle className="shrink-0 text-ink/30" size={17} />
                           )}
-                          {option.label}
+                          <span className="truncate">{option.label}</span>
                         </button>
                         <button
-                          className="soft-focus-ring rounded-xl p-2 text-ink/60 hover:bg-white"
+                          className="soft-focus-ring shrink-0 rounded-xl p-2 text-ink/55 hover:bg-white/85"
                           onClick={() => onExpand(option.id)}
                           aria-label="展开标签封装"
                         >
                           <ChevronDown className={expanded ? 'rotate-180 transition' : 'transition'} size={17} />
                         </button>
                       </div>
-                      <button
-                        className="soft-focus-ring mt-2 w-full rounded-xl px-2 py-2 text-left text-xs font-bold text-ink/58 hover:bg-white/70"
-                        onClick={() => onSelect(category, option.id)}
-                        aria-label={`选择${option.label}`}
-                      >
-                        {selected ? '已选中，点击可取消' : '点击选择这个标签'}
-                      </button>
-                      {expanded && <p className="mt-3 text-sm leading-6 text-ink/72">{option.promptText}</p>}
+                      {expanded && (
+                        <p className="border-t border-line/70 bg-white/62 px-3 py-3 text-xs leading-5 text-ink/70">
+                          {option.promptText}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
@@ -386,13 +453,11 @@ function GoalPanel({
   loading: boolean
 }) {
   return (
-    <main className="grid gap-5 lg:grid-cols-[1fr_0.72fr]">
-      <section className="rounded-[28px] border border-line bg-white/80 p-6 shadow-paper">
-        <div className="flex items-center gap-2 text-sm font-bold text-leaf">
-          <PenLine size={17} />
-          短目标优先，长目标也能处理
-        </div>
-        <h2 className="mt-3 text-3xl font-black">写下今天想推进的目标</h2>
+    <main className="grid gap-4 lg:grid-cols-[1fr_0.66fr]">
+      <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
+        <BrandMark />
+        <h1 className="mt-5 text-3xl font-black sm:text-4xl">今天想完成什么？</h1>
+        <p className="mt-2 text-sm leading-6 text-ink/64">直接写事情本身就好，长一点也可以。</p>
         <textarea
           className="soft-focus-ring mt-5 min-h-44 w-full resize-none rounded-[22px] border border-line bg-paper/70 p-5 text-lg leading-8 shadow-inner"
           maxLength={1000}
@@ -400,9 +465,9 @@ function GoalPanel({
           onChange={(event) => setRawInput(event.target.value)}
           placeholder="例如：做一个AI网站"
         />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-ink/60">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-ink/58">
           <span>{rawInput.length}/1000</span>
-          <span>主场景仍为 15 字以内短目标，系统会自动补足拆解上下文。</span>
+          <span>写清楚想完成的事，LeavesFlow 会拆成可执行步骤。</span>
         </div>
         <button
           className="soft-focus-ring mt-6 inline-flex items-center gap-2 rounded-2xl bg-peach px-6 py-3 text-sm font-black text-ink shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
@@ -413,11 +478,11 @@ function GoalPanel({
           生成任务路径
         </button>
       </section>
-      <aside className="rounded-[28px] border border-line bg-white/72 p-6 shadow-soft">
-        <h3 className="flex items-center gap-2 text-lg font-black">
+      <aside className="rounded-[26px] border border-line bg-white/74 p-4 shadow-soft sm:p-5">
+        <h2 className="flex items-center gap-2 text-lg font-black">
           <BookOpen size={18} className="text-leaf" />
-          示例目标
-        </h3>
+          可以这样写
+        </h2>
         <div className="mt-4 grid gap-3">
           {quickGoals.map((goal) => (
             <button
@@ -455,7 +520,9 @@ function PlanPanel({
   setCheckInText: (value: { whatDone: string; whatProduced: string; problems: string }) => void
   onCheckIn: (taskId: string) => void
 }) {
-  const activeTask = plan?.stages.flatMap((stage) => stage.tasks).find((task) => task.id === activeTaskId)
+  const allTasks = plan ? getAllTasks(plan) : []
+  const activeTask = allTasks.find((task) => task.id === activeTaskId) ?? allTasks[0]
+  const activeIndex = activeTask ? allTasks.findIndex((task) => task.id === activeTask.id) : -1
 
   if (loading && !plan) {
     return (
@@ -478,98 +545,166 @@ function PlanPanel({
   }
 
   return (
-    <main className="grid gap-5 lg:grid-cols-[0.82fr_1.18fr]">
-      <section className="rounded-[28px] border border-line bg-white/78 p-5 shadow-paper">
-        <p className="text-sm font-bold text-leaf">{plan.goalTitle}</p>
-        <h2 className="mt-2 text-2xl font-black">今日计划</h2>
-        <p className="mt-3 text-sm leading-6 text-ink/70">{plan.goalSummary}</p>
-        <div className="mt-6 grid gap-4">
+    <main className="grid gap-4">
+      <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
+        <BrandMark />
+        <div className="mt-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-leaf">{plan.goalTitle}</p>
+            <h1 className="mt-1 text-2xl font-black">任务导航</h1>
+          </div>
+          <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">
+            {activeIndex + 1 > 0 ? `${activeIndex + 1}/${allTasks.length}` : `0/${allTasks.length}`}
+          </span>
+        </div>
+        <p className="mt-3 max-w-4xl text-base leading-8 text-ink/72">{compactText(plan.goalSummary, 140)}</p>
+        <div className="mt-6 grid gap-6">
           {plan.stages.map((stage) => (
-            <div key={stage.id}>
-              <h3 className="mb-3 text-sm font-black text-ink/75">{stage.title}</h3>
-              <div className="grid gap-2">
-                {stage.tasks.map((task) => (
-                  <button
-                    key={task.id}
-                    className={`soft-focus-ring rounded-2xl border px-4 py-3 text-left transition ${
-                      activeTaskId === task.id
-                        ? 'border-leaf bg-mint/70'
-                        : 'border-line bg-paper/70 hover:border-peach'
-                    }`}
-                    onClick={() => setActiveTaskId(task.id)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-black">{task.title}</span>
-                      {task.status === 'completed' && <CheckCircle2 className="text-leaf" size={18} />}
-                    </div>
-                    <p className="mt-1 text-sm text-ink/62">{task.expectedOutput}</p>
-                  </button>
-                ))}
+            <div key={stage.id} className="relative">
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-black text-ink/72">
+                <Flag size={15} className="text-leaf" />
+                {stage.title}
+              </h2>
+              <div className="relative grid gap-4 pl-8 before:absolute before:left-[15px] before:top-2 before:h-[calc(100%-8px)] before:w-px before:bg-leaf/24">
+                {stage.tasks.map((task) => {
+                  const expanded = activeTask?.id === task.id
+                  return (
+                    <RouteTaskNode
+                      key={task.id}
+                      task={{ ...task, stageTitle: stage.title }}
+                      expanded={expanded}
+                      checkInTaskId={checkInTaskId}
+                      checkInText={checkInText}
+                      loading={loading}
+                      setCheckInTaskId={setCheckInTaskId}
+                      setCheckInText={setCheckInText}
+                      onCheckIn={onCheckIn}
+                      onSelect={() => setActiveTaskId(task.id)}
+                    />
+                  )
+                })}
               </div>
             </div>
           ))}
         </div>
       </section>
+    </main>
+  )
+}
 
-      <section className="rounded-[28px] border border-line bg-white/82 p-6 shadow-paper">
-        {activeTask && (
-          <div className="grid gap-5">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                {activeTask.predictedSkillTags.map((tag) => (
-                  <span key={tag} className="rounded-full bg-butter/55 px-3 py-1 text-xs font-black text-ink/72">
-                    {tag}
-                  </span>
+function RouteTaskNode({
+  task,
+  expanded,
+  checkInTaskId,
+  checkInText,
+  loading,
+  setCheckInTaskId,
+  setCheckInText,
+  onCheckIn,
+  onSelect,
+}: {
+  task: RouteTask
+  expanded: boolean
+  checkInTaskId: string | null
+  checkInText: { whatDone: string; whatProduced: string; problems: string }
+  loading: boolean
+  setCheckInTaskId: (id: string | null) => void
+  setCheckInText: (value: { whatDone: string; whatProduced: string; problems: string }) => void
+  onCheckIn: (taskId: string) => void
+  onSelect: () => void
+}) {
+  return (
+    <article className="relative">
+      <span
+        className={`absolute -left-[38px] top-4 flex h-9 w-9 items-center justify-center rounded-[18px] border shadow-soft ${
+          task.status === 'completed'
+            ? 'border-leaf bg-leaf text-white'
+            : expanded
+              ? 'border-leaf bg-white text-leaf'
+              : 'border-line bg-white text-ink/45'
+        }`}
+      >
+        {task.status === 'completed' ? <CheckCircle2 size={17} /> : <Leaf size={17} />}
+      </span>
+
+      <div
+        className={`rounded-[24px] border transition ${
+          expanded ? 'border-leaf bg-white/90 shadow-paper' : 'border-line bg-paper/70 hover:border-leaf/45'
+        }`}
+      >
+        <button
+          className="soft-focus-ring flex w-full items-start justify-between gap-3 rounded-[24px] px-4 py-4 text-left sm:px-5"
+          onClick={onSelect}
+          aria-label={expanded ? `当前节点：${task.title}` : `查看${task.title}`}
+          aria-expanded={expanded}
+        >
+          <span className="min-w-0">
+            <span className="block text-lg font-black leading-7">{task.title}</span>
+            <span className="mt-1 block text-sm leading-6 text-ink/66">
+              {expanded ? compactText(task.description || task.expectedOutput, 96) : compactText(task.expectedOutput, 64)}
+            </span>
+          </span>
+          <MapPin className="mt-1 shrink-0 text-leaf/72" size={18} />
+        </button>
+
+        {expanded && (
+          <div className="grid gap-4 border-t border-line/70 px-4 pb-4 pt-4 sm:px-5 sm:pb-5">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-black">
+              <span className="rounded-full bg-mint px-3 py-1 text-leaf">{task.stageTitle}</span>
+              {task.predictedSkillTags.map((tag) => (
+                <span key={tag} className="rounded-full bg-butter/55 px-3 py-1 text-ink/72">
+                  {tag}
+                </span>
+              ))}
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
+              <InfoBlock title="这一站要产出" content={task.expectedOutput} />
+              <InfoBlock title="可复制给 AI" content={task.vibeCodingPrompt} copyable compact />
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <ListBlock title="路线动作" items={task.pathSteps.slice(0, 4)} />
+              <ListBlock title="完成标准" items={task.completionCriteria} />
+            </div>
+
+            {(task.tools.length > 0 || task.resources.length > 0) && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {task.tools.map((tool) => (
+                  <RecommendationLink
+                    key={tool.name}
+                    title={tool.name}
+                    description={tool.usage}
+                    url={tool.url}
+                    kind="tool"
+                  />
+                ))}
+                {task.resources.map((resource) => (
+                  <RecommendationLink
+                    key={resource.title}
+                    title={resource.title}
+                    description={resource.description ?? '推荐资源'}
+                    url={resource.url}
+                    kind="resource"
+                  />
                 ))}
               </div>
-              <h2 className="mt-3 text-3xl font-black">{activeTask.title}</h2>
-              <p className="mt-3 leading-7 text-ink/70">{activeTask.description}</p>
-            </div>
-            <InfoBlock title="给 AI 的上下文" content={activeTask.contextForAI} />
-            <InfoBlock title="可复制 Prompt" content={activeTask.vibeCodingPrompt} copyable />
-            <InfoBlock title="预期产出" content={activeTask.expectedOutput} />
-            <ListBlock title="执行路径" items={activeTask.pathSteps} />
-            <ListBlock title="完成标准" items={activeTask.completionCriteria} />
-            <div className="grid gap-3 sm:grid-cols-2">
-              {activeTask.tools.map((tool) => (
-                <a
-                  key={tool.name}
-                  className="rounded-2xl border border-line bg-paper/70 p-4 text-sm hover:border-leaf"
-                  href={tool.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <b>{tool.name}</b>
-                  <p className="mt-1 text-ink/65">{tool.usage}</p>
-                </a>
-              ))}
-              {activeTask.resources.map((resource) => (
-                <a
-                  key={resource.title}
-                  className="rounded-2xl border border-line bg-paper/70 p-4 text-sm hover:border-leaf"
-                  href={resource.url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <b>{resource.title}</b>
-                  <p className="mt-1 text-ink/65">{resource.description ?? '推荐资源'}</p>
-                </a>
-              ))}
-            </div>
-            {activeTask.status === 'completed' ? (
-              <div className="rounded-2xl bg-mint/70 p-4 font-black text-leaf">这个任务已经完成打卡。</div>
-            ) : checkInTaskId === activeTask.id ? (
+            )}
+
+            {task.status === 'completed' ? (
+              <div className="rounded-2xl bg-mint/70 p-4 font-black text-leaf">这个节点已经完成打卡。</div>
+            ) : checkInTaskId === task.id ? (
               <CheckInForm
                 value={checkInText}
                 setValue={setCheckInText}
                 onCancel={() => setCheckInTaskId(null)}
-                onSubmit={() => onCheckIn(activeTask.id)}
+                onSubmit={() => onCheckIn(task.id)}
                 loading={loading}
               />
             ) : (
               <button
                 className="soft-focus-ring inline-flex w-fit items-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft"
-                onClick={() => setCheckInTaskId(activeTask.id)}
+                onClick={() => setCheckInTaskId(task.id)}
               >
                 <CheckCircle2 size={18} />
                 打卡完成
@@ -577,12 +712,69 @@ function PlanPanel({
             )}
           </div>
         )}
-      </section>
-    </main>
+      </div>
+    </article>
   )
 }
 
-function InfoBlock({ title, content, copyable = false }: { title: string; content: string; copyable?: boolean }) {
+function RecommendationLink({
+  title,
+  description,
+  url,
+  kind,
+}: {
+  title: string
+  description: string
+  url: string
+  kind: RecommendationKind
+}) {
+  const validUrl = isValidHttpUrl(url)
+
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (!validUrl) {
+      event.preventDefault()
+      return
+    }
+
+    if (window.LeavesFlowNative?.openExternalUrl) {
+      event.preventDefault()
+      openRecommendationUrl(url, title, kind)
+    }
+  }
+
+  return (
+    <a
+      className={`soft-focus-ring group flex min-h-[84px] items-start justify-between gap-3 rounded-2xl border p-3 text-sm transition ${
+        validUrl
+          ? 'border-line bg-paper/70 hover:border-leaf hover:bg-white/82'
+          : 'pointer-events-none border-line/70 bg-paper/45 text-ink/45'
+      }`}
+      href={validUrl ? url : '#'}
+      onClick={handleClick}
+      aria-disabled={!validUrl}
+      data-recommendation-kind={kind}
+      data-open-mode="in-app-or-native-browser"
+    >
+      <span className="min-w-0">
+        <span className="block font-black text-ink">{title}</span>
+        <span className="mt-1 block leading-5 text-ink/65">{compactText(description, 58)}</span>
+      </span>
+      <ExternalLink className="mt-0.5 shrink-0 text-leaf/75 transition group-hover:translate-x-0.5" size={17} />
+    </a>
+  )
+}
+
+function InfoBlock({
+  title,
+  content,
+  copyable = false,
+  compact = false,
+}: {
+  title: string
+  content: string
+  copyable?: boolean
+  compact?: boolean
+}) {
   async function copy() {
     await navigator.clipboard.writeText(content)
   }
@@ -596,7 +788,9 @@ function InfoBlock({ title, content, copyable = false }: { title: string; conten
           </button>
         )}
       </div>
-      <p className="whitespace-pre-wrap text-sm leading-7 text-ink/72">{content}</p>
+      <p className={`whitespace-pre-wrap text-sm text-ink/72 ${compact ? 'line-clamp-6 leading-6' : 'leading-7'}`}>
+        {content}
+      </p>
     </div>
   )
 }
@@ -666,48 +860,129 @@ function CheckInForm({
   )
 }
 
-function SkillPanel({ skills, onRefresh, loading }: { skills: SkillTag[]; onRefresh: () => void; loading: boolean }) {
+function SkillPanel({
+  skills,
+  onRefresh,
+  loading,
+  selectedSkillId,
+  setSelectedSkillId,
+}: {
+  skills: SkillTag[]
+  onRefresh: () => void
+  loading: boolean
+  selectedSkillId: string | null
+  setSelectedSkillId: (id: string | null) => void
+}) {
+  const selectedSkill = skills.find((skill) => skill.id === selectedSkillId)
+
+  if (selectedSkill) {
+    return <SkillDetailPanel skill={selectedSkill} onBack={() => setSelectedSkillId(null)} />
+  }
+
   return (
-    <main className="rounded-[28px] border border-line bg-white/78 p-6 shadow-paper">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-bold text-leaf">能力资产库</p>
-          <h2 className="mt-2 text-3xl font-black">我的技能标签</h2>
+    <main className="grid gap-4">
+      <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <BrandMark />
+            <p className="mt-5 text-sm font-bold text-leaf">能力资产库</p>
+            <h1 className="mt-1 text-3xl font-black">我的技能标签</h1>
+            <p className="mt-2 text-sm leading-6 text-ink/64">
+              共 {skills.length} 个能力标签。点击标签可查看能力 Prompt 和来源说明。
+            </p>
+          </div>
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
+            刷新
+          </button>
         </div>
-        <button
-          className="soft-focus-ring inline-flex items-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
-          刷新
-        </button>
-      </div>
+      </section>
       {skills.length === 0 ? (
-        <div className="mt-8 rounded-[24px] bg-paper/80 p-8 text-center">
+        <section className="rounded-[24px] border border-line bg-white/74 p-8 text-center shadow-soft">
           <Sparkles className="mx-auto text-peach" size={34} />
           <h3 className="mt-3 text-xl font-black">还没有沉淀能力 Prompt</h3>
           <p className="mt-2 text-ink/65">完成一次任务打卡后，这里会出现可复用的能力卡片。</p>
-        </div>
+        </section>
       ) : (
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-lg font-black">
+              <UserRound size={18} className="text-leaf" />
+              标签列表
+            </h2>
+            <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">{skills.length} 项</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {skills.map((skill) => (
-            <div key={skill.id} className="rounded-[24px] border border-line bg-paper/76 p-5 shadow-soft">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-xl font-black">{skill.name}</h3>
-                <div className="flex gap-2">
-                  <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">{skill.level}</span>
-                  <span className="rounded-full bg-butter/60 px-3 py-1 text-xs font-black text-ink/70">
-                    x{skill.count}
-                  </span>
-                </div>
+            <button
+              key={skill.id}
+              className="soft-focus-ring flex min-h-[76px] items-center justify-between gap-3 rounded-2xl border border-line bg-paper/74 p-4 text-left shadow-soft transition hover:border-leaf/55 hover:bg-white/82"
+              onClick={() => setSelectedSkillId(skill.id)}
+            >
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-black">{skill.name}</h3>
+                <p className="mt-1 text-xs font-bold text-ink/56">{skill.level} · 使用 {skill.count} 次</p>
               </div>
-              <InfoBlock title="能力 Prompt" content={skill.prompt} copyable />
-              <p className="mt-4 text-sm leading-6 text-ink/65">{skill.evidence}</p>
-            </div>
+              <Eye className="shrink-0 text-leaf" size={18} />
+            </button>
           ))}
-        </div>
+          </div>
+        </section>
       )}
+    </main>
+  )
+}
+
+function SkillDetailPanel({ skill, onBack }: { skill: SkillTag; onBack: () => void }) {
+  async function copyPrompt() {
+    await navigator.clipboard.writeText(skill.prompt)
+  }
+
+  return (
+    <main className="grid gap-4">
+      <section className="rounded-[26px] border border-line bg-white/84 p-4 shadow-paper sm:p-6">
+        <button
+          className="soft-focus-ring inline-flex items-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
+          onClick={onBack}
+        >
+          <ArrowLeft size={17} />
+          返回标签列表
+        </button>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-bold text-leaf">
+              <BadgeCheck size={17} />
+              能力详情
+            </p>
+            <h1 className="mt-2 text-3xl font-black">{skill.name}</h1>
+          </div>
+          <div className="flex gap-2">
+            <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">{skill.level}</span>
+            <span className="rounded-full bg-butter/60 px-3 py-1 text-xs font-black text-ink/70">x{skill.count}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-black">能力 Prompt</h2>
+          <button className="soft-focus-ring rounded-xl p-2 hover:bg-white" onClick={copyPrompt} aria-label="复制能力 Prompt">
+            <Copy size={17} />
+          </button>
+        </div>
+        <p className="mt-3 whitespace-pre-wrap rounded-[20px] border border-line bg-paper/74 p-4 text-sm leading-7 text-ink/74">
+          {skill.prompt}
+        </p>
+      </section>
+
+      <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-soft sm:p-5">
+        <h2 className="text-lg font-black">来源说明</h2>
+        <p className="mt-3 text-sm leading-7 text-ink/68">{skill.evidence}</p>
+      </section>
     </main>
   )
 }
