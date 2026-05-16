@@ -1,6 +1,8 @@
 import type {
   ActivePlanResponse,
   CheckInResponse,
+  GoalDetailResponse,
+  GoalHistoryItem,
   MeResponse,
   PlanResponse,
   SkillTag,
@@ -73,6 +75,13 @@ const goalCategoryKeys: TagOptionCategory['key'][] = [
 ]
 
 const inputGuidance = '写下你真正想推进的事。可以很短，也可以补充背景、交付物或截止时间。'
+const historyDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+})
 
 function errorMessage(err: unknown, fallback: string) {
   if (err instanceof LeavesFlowApiError) {
@@ -86,6 +95,14 @@ function errorMessage(err: unknown, fallback: string) {
 function compactText(value: string, maxLength = 46) {
   const text = value.trim()
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text
+}
+
+function formatDateTime(value: string) {
+  try {
+    return historyDateFormatter.format(new Date(value))
+  } catch {
+    return value
+  }
 }
 
 function getAllTasks(plan: PlanResponse | ActivePlanResponse): RouteTask[] {
@@ -159,6 +176,10 @@ export function App() {
   const [generatingPlan, setGeneratingPlan] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [historyItems, setHistoryItems] = useState<GoalHistoryItem[]>([])
+  const [historyDetail, setHistoryDetail] = useState<GoalDetailResponse | null>(null)
+  const [historyLoadingGoalId, setHistoryLoadingGoalId] = useState<string | null>(null)
+  const [historyExpandedGoalId, setHistoryExpandedGoalId] = useState<string | null>(null)
 
   useEffect(() => {
     void bootstrap()
@@ -196,6 +217,7 @@ export function App() {
     setMe(meData)
     setBaseProfile(profile)
     setGoalProfile(profile)
+    setHistoryItems(meData.goalHistory ?? [])
     if (meData.activePlan) {
       setPlan(meData.activePlan)
       setView('plan')
@@ -310,6 +332,40 @@ export function App() {
     }
   }
 
+  async function refreshHistory() {
+    setLoading(true)
+    setError('')
+    try {
+      const meData = await api.getMe()
+      applyMeState(meData)
+      setMessage('历史路径已更新。')
+    } catch (err) {
+      setError(errorMessage(err, '刷新历史路径失败'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function openHistoryGoal(goalId: string) {
+    setHistoryLoadingGoalId(goalId)
+    setError('')
+    try {
+      const detail = await api.getGoal(goalId)
+      setHistoryDetail(detail)
+      setHistoryExpandedGoalId(goalId)
+      setView('user')
+    } catch (err) {
+      setError(errorMessage(err, '加载路径历史失败'))
+    } finally {
+      setHistoryLoadingGoalId(null)
+    }
+  }
+
+  function closeHistoryDetail() {
+    setHistoryDetail(null)
+    setHistoryExpandedGoalId(null)
+  }
+
   async function createAndGenerateGoal() {
     const text = rawInput.trim()
     if (!text) {
@@ -334,7 +390,8 @@ export function App() {
       setPlan(generated)
       setActiveTaskId(generated.stages[0]?.tasks[0]?.id ?? null)
       setMessage('任务路径已生成，可以从第一步开始。')
-      setMe(await api.getMe())
+      const meData = await api.getMe()
+      applyMeState(meData)
     } catch (err) {
       setError(errorMessage(err, '生成任务路径失败'))
     } finally {
@@ -358,7 +415,8 @@ export function App() {
         const nextPending = getAllTasks(refreshedPlan).find((task) => task.status !== 'completed')
         setActiveTaskId(nextPending?.id ?? taskId)
       }
-      setMe(await api.getMe())
+      const meData = await api.getMe()
+      applyMeState(meData)
       setCheckInTaskId(null)
       setCheckInText({ whatDone: '', whatProduced: '', problems: '' })
       setMessage(`已沉淀 ${result.newSkillTags.length} 张能力 Prompt 卡片。`)
@@ -371,13 +429,16 @@ export function App() {
 
   function logout() {
     clearAuthToken()
-    setMe(null)
-    setPlan(null)
-    setRawInput('')
-    setMessage('已退出登录。')
-    setError('')
-    setView('goal')
-  }
+      setMe(null)
+      setPlan(null)
+      setHistoryItems([])
+      setHistoryDetail(null)
+      setHistoryExpandedGoalId(null)
+      setRawInput('')
+      setMessage('已退出登录。')
+      setError('')
+      setView('goal')
+    }
 
   if (!me) {
     return (
@@ -451,11 +512,17 @@ export function App() {
             categories={baseCategories}
             profile={baseProfile}
             expandedTags={expandedTags}
+            historyItems={historyItems}
+            historyDetail={historyDetail}
+            historyExpandedGoalId={historyExpandedGoalId}
+            historyLoadingGoalId={historyLoadingGoalId}
             loading={loading}
             onExpand={(id) => setExpandedTags((current) => ({ ...current, [id]: !current[id] }))}
             onSelect={(category, optionId) => selectTag('base', category, optionId)}
             onSaveProfile={saveBaseProfile}
-            onSaveDisplayName={updateDisplayName}
+            onRefreshHistory={refreshHistory}
+            onOpenHistoryGoal={openHistoryGoal}
+            onCloseHistoryDetail={closeHistoryDetail}
             onLogout={logout}
           />
         )}
@@ -1313,32 +1380,43 @@ function UserPanel({
   categories,
   profile,
   expandedTags,
+  historyItems,
+  historyDetail,
+  historyExpandedGoalId,
+  historyLoadingGoalId,
   loading,
   onExpand,
   onSelect,
   onSaveProfile,
-  onSaveDisplayName,
+  onRefreshHistory,
+  onOpenHistoryGoal,
+  onCloseHistoryDetail,
   onLogout,
 }: {
   me: MeResponse
   categories: TagOptionCategory[]
   profile: UserTagProfileIds
   expandedTags: Record<string, boolean>
+  historyItems: GoalHistoryItem[]
+  historyDetail: GoalDetailResponse | null
+  historyExpandedGoalId: string | null
+  historyLoadingGoalId: string | null
   loading: boolean
   onExpand: (id: string) => void
   onSelect: (category: TagOptionCategory, optionId: string) => void
   onSaveProfile: () => void
-  onSaveDisplayName: (displayName: string) => void
+  onRefreshHistory: () => void
+  onOpenHistoryGoal: (goalId: string) => void
+  onCloseHistoryDetail: () => void
   onLogout: () => void
 }) {
-  const [displayName, setDisplayName] = useState(me.user.displayName)
-
-  useEffect(() => {
-    setDisplayName(me.user.displayName)
-  }, [me.user.displayName])
+  const activeHistoryCount = historyItems.filter((item) => item.status === 'active').length
+  const completedHistoryCount = historyItems.filter((item) => item.status === 'completed').length
+  const detailPlan = historyDetail?.plan ?? null
+  const detailTasks = detailPlan ? getAllTasks(detailPlan) : []
 
   return (
-    <main className="grid gap-4">
+    <main className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
       <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
         <BrandMark />
         <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -1358,25 +1436,59 @@ function UserPanel({
       </section>
 
       <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
-        <h2 className="flex items-center gap-2 text-lg font-black">
-          <UserRound size={18} className="text-leaf" />
-          编辑信息
-        </h2>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <input
-            className="soft-focus-ring min-w-0 flex-1 rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
-            value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
-          />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-black">
+              <Route size={18} className="text-leaf" />
+              路径历史
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-ink/64">
+              点开任意历史卡片，可以查看当时生成的完整路径，以及每个节点打卡时你写下的内容。
+            </p>
+          </div>
           <button
-            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:opacity-60"
-            disabled={loading || !displayName.trim()}
-            onClick={() => onSaveDisplayName(displayName)}
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
+            onClick={onRefreshHistory}
+            disabled={loading}
           >
-            {loading ? <Loader2 className="animate-spin" size={17} /> : <CheckCircle2 size={17} />}
-            保存信息
+            {loading ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
+            刷新历史
           </button>
         </div>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-ink/60">
+          <span className="rounded-full bg-mint px-3 py-1 text-leaf">{historyItems.length} 条路径</span>
+          <span className="rounded-full bg-paper px-3 py-1">进行中 {activeHistoryCount}</span>
+          <span className="rounded-full bg-butter/70 px-3 py-1">已归档 {completedHistoryCount}</span>
+        </div>
+
+        {!historyDetail ? (
+          historyItems.length === 0 ? (
+            <div className="mt-5 rounded-[24px] border border-dashed border-line bg-paper/72 p-6 text-center">
+              <Map className="mx-auto text-leaf" size={32} />
+              <h3 className="mt-3 text-lg font-black">还没有路径历史</h3>
+              <p className="mt-2 text-sm leading-6 text-ink/64">完成一次目标生成并打卡后，这里会自动出现路径卡片。</p>
+            </div>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              {historyItems.map((item) => (
+                <HistoryGoalCard
+                  key={item.id}
+                  item={item}
+                  loading={historyLoadingGoalId === item.id}
+                  active={historyExpandedGoalId === item.id}
+                  onOpen={() => onOpenHistoryGoal(item.id)}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <HistoryDetailPanel
+            detail={historyDetail}
+            loading={loading}
+            onBack={onCloseHistoryDetail}
+          />
+        )}
       </section>
 
       <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
@@ -1406,5 +1518,214 @@ function UserPanel({
         />
       </section>
     </main>
+  )
+}
+
+function HistoryGoalCard({
+  item,
+  loading,
+  active,
+  onOpen,
+}: {
+  item: GoalHistoryItem
+  loading: boolean
+  active: boolean
+  onOpen: () => void
+}) {
+  const progress = item.totalTasks > 0 ? Math.round((item.completedTasks / item.totalTasks) * 100) : 0
+
+  return (
+    <button
+      className={`soft-focus-ring group flex min-h-[150px] flex-col rounded-[22px] border p-4 text-left transition ${
+        active ? 'border-leaf bg-white shadow-paper' : 'border-line bg-paper/70 hover:border-leaf/45 hover:bg-white/82'
+      }`}
+      onClick={onOpen}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${item.status === 'completed' ? 'bg-mint text-leaf' : 'bg-butter/70 text-ink/72'}`}>
+              {item.status === 'completed' ? '已完成' : '进行中'}
+            </span>
+            {item.hasPlan && <span className="rounded-full bg-paper px-2.5 py-1 text-[11px] font-black text-ink/60">已生成路径</span>}
+          </div>
+          <h3 className="mt-3 line-clamp-2 text-lg font-black leading-7">{item.title}</h3>
+        </div>
+        {loading ? <Loader2 className="mt-1 animate-spin text-leaf" size={18} /> : <Route className="mt-1 text-leaf/75 transition group-hover:translate-x-0.5" size={18} />}
+      </div>
+      <p className="mt-3 line-clamp-2 text-sm leading-6 text-ink/62">{item.goalSummary || item.rawInput}</p>
+      <div className="mt-auto pt-4">
+        <div className="flex items-center justify-between text-xs font-black text-ink/58">
+          <span>
+            {item.completedTasks}/{item.totalTasks || 0} 节点
+          </span>
+          <span>{progress}%</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+          <div className="h-full rounded-full bg-leaf transition-all" style={{ width: `${Math.max(progress, item.totalTasks ? 6 : 0)}%` }} />
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function HistoryDetailPanel({
+  detail,
+  loading,
+  onBack,
+}: {
+  detail: GoalDetailResponse
+  loading: boolean
+  onBack: () => void
+}) {
+  const stages = detail.plan?.stages ?? []
+  const tasks = stages.flatMap((stage) => stage.tasks)
+  const completedCount = tasks.filter((task) => task.status === 'completed').length
+
+  return (
+    <div className="mt-4 grid gap-4">
+      <div className="flex flex-col gap-3 rounded-[24px] border border-line bg-white/78 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
+        <div className="min-w-0">
+          <button className="soft-focus-ring inline-flex items-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black" onClick={onBack}>
+            <ArrowLeft size={17} />
+            返回历史卡片
+          </button>
+          <div className="mt-4 flex flex-wrap gap-2 text-xs font-black text-ink/60">
+            <span className="rounded-full bg-mint px-3 py-1 text-leaf">{detail.status === 'completed' ? '已完成' : '进行中'}</span>
+            <span className="rounded-full bg-paper px-3 py-1">{formatDateTime(detail.createdAt)}</span>
+            <span className="rounded-full bg-butter/70 px-3 py-1">{completedCount}/{tasks.length || 0} 节点</span>
+          </div>
+          <h3 className="mt-4 text-2xl font-black sm:text-3xl">{detail.title}</h3>
+          <p className="mt-2 max-w-4xl text-sm leading-7 text-ink/68">{detail.goalSummary || detail.rawInput}</p>
+        </div>
+        <div className="rounded-[22px] border border-line bg-paper/72 p-4 text-sm text-ink/70 sm:min-w-[220px]">
+          <p className="font-black text-ink">路径概览</p>
+          <div className="mt-3 grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <span>阶段数</span>
+              <span className="font-black text-ink">{stages.length}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>节点数</span>
+              <span className="font-black text-ink">{tasks.length}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>完成节点</span>
+              <span className="font-black text-ink">{completedCount}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {loading && <div className="rounded-[22px] border border-line bg-white/78 p-4 text-sm text-ink/60">正在加载历史路径详情...</div>}
+
+      <div className="grid gap-4">
+        {stages.length === 0 ? (
+          <div className="rounded-[24px] border border-dashed border-line bg-paper/72 p-8 text-center text-sm text-ink/62">
+            这条路径还没有生成阶段内容。
+          </div>
+        ) : (
+          stages.map((stage) => (
+            <section key={stage.id} className="rounded-[24px] border border-line bg-white/82 p-4 shadow-paper sm:p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-bold text-leaf">阶段 {stage.sortOrder + 1}</p>
+                  <h4 className="mt-1 text-xl font-black">{stage.title}</h4>
+                  <p className="mt-2 text-sm leading-6 text-ink/64">{stage.description}</p>
+                </div>
+                <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-leaf">{stage.tasks.length} 个节点</span>
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                {stage.tasks.map((task) => (
+                  <HistoryTaskNode key={task.id} task={task} stageTitle={stage.title} />
+                ))}
+              </div>
+            </section>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
+function HistoryTaskNode({
+  task,
+  stageTitle,
+}: {
+  task: PlanResponse['stages'][number]['tasks'][number] & { stageTitle?: string }
+  stageTitle: string
+}) {
+  const checkIn = task.checkIn
+  return (
+    <article className="rounded-[22px] border border-line bg-paper/70 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap gap-2 text-xs font-black">
+            <span className="rounded-full bg-white px-3 py-1 text-leaf">{stageTitle}</span>
+            <span className={`rounded-full px-3 py-1 ${task.status === 'completed' ? 'bg-mint text-leaf' : 'bg-butter/70 text-ink/70'}`}>
+              {task.status === 'completed' ? '已打卡' : '未打卡'}
+            </span>
+          </div>
+          <h5 className="mt-3 text-lg font-black">{task.title}</h5>
+          <p className="mt-2 text-sm leading-7 text-ink/68">{task.description}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+        <InfoBlock title="这一站要产出" content={task.expectedOutput} />
+        <InfoBlock title="可复制给 AI" content={task.vibeCodingPrompt} copyable compact />
+      </div>
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <ListBlock title="路线动作" items={task.pathSteps.slice(0, 6)} />
+        <ListBlock title="完成标准" items={task.completionCriteria} />
+      </div>
+
+      {(task.tools.length > 0 || task.resources.length > 0) && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {task.tools.map((tool) => (
+            <RecommendationLink
+              key={`${task.id}-${tool.name}`}
+              title={tool.name}
+              description={tool.usage}
+              url={tool.url}
+              kind="tool"
+            />
+          ))}
+          {task.resources.map((resource) => (
+            <RecommendationLink
+              key={`${task.id}-${resource.title}`}
+              title={resource.title}
+              description={resource.description ?? '推荐资源'}
+              url={resource.url}
+              kind="resource"
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <HistoryNoteBlock title="完成了什么" content={checkIn?.whatDone} />
+        <HistoryNoteBlock title="产出了什么" content={checkIn?.whatProduced} />
+        <HistoryNoteBlock title="遇到了什么问题" content={checkIn?.problems} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-black text-ink/56">
+        <span className="rounded-full bg-white px-3 py-1">预测能力：{task.predictedSkillTags.join(' · ') || '无'}</span>
+        {checkIn?.createdAt && <span className="rounded-full bg-white px-3 py-1">打卡时间：{formatDateTime(checkIn.createdAt)}</span>}
+      </div>
+    </article>
+  )
+}
+
+function HistoryNoteBlock({ title, content }: { title: string; content?: string | null }) {
+  return (
+    <div className="rounded-[20px] border border-line bg-white/78 p-4">
+      <h6 className="text-sm font-black">{title}</h6>
+      <p className="mt-2 min-h-16 whitespace-pre-wrap text-sm leading-6 text-ink/72">
+        {content?.trim() || '未填写'}
+      </p>
+    </div>
   )
 }

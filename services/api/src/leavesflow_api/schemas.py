@@ -174,6 +174,14 @@ class ResourceRecommendation(BaseModel):
         return text
 
 
+class TaskCheckInOut(BaseModel):
+    id: str
+    whatDone: str | None = None
+    whatProduced: str | None = None
+    problems: str | None = None
+    createdAt: str
+
+
 class DecompositionTask(BaseModel):
     title: str
     description: str
@@ -213,6 +221,7 @@ class TaskNodeOut(BaseModel):
     predictedSkillTags: list[str]
     status: TaskStatus
     sortOrder: int
+    checkIn: TaskCheckInOut | None = None
 
 
 class StageOut(BaseModel):
@@ -241,11 +250,25 @@ class ActivePlanResponse(BaseModel):
     stages: list[StageOut]
 
 
+class GoalHistoryItem(BaseModel):
+    id: str
+    title: str
+    rawInput: str
+    status: GoalStatus
+    goalSummary: str | None = None
+    createdAt: str
+    updatedAt: str
+    completedTasks: int
+    totalTasks: int
+    hasPlan: bool
+
+
 class MeResponse(BaseModel):
     userId: str
     user: UserOut
     tagProfile: UserTagProfileOut
     skillTags: list[SkillTagOut]
+    goalHistory: list[GoalHistoryItem] = Field(default_factory=list)
     activePlan: ActivePlanResponse | None = None
 
 

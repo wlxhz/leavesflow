@@ -945,6 +945,74 @@
         ],
         "title": "GoalDetailResponse"
       },
+      "GoalHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "rawInput": {
+            "type": "string",
+            "title": "Rawinput"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed"
+            ],
+            "title": "Status"
+          },
+          "goalSummary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goalsummary"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          },
+          "completedTasks": {
+            "type": "integer",
+            "title": "Completedtasks"
+          },
+          "totalTasks": {
+            "type": "integer",
+            "title": "Totaltasks"
+          },
+          "hasPlan": {
+            "type": "boolean",
+            "title": "Hasplan"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "rawInput",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "completedTasks",
+          "totalTasks",
+          "hasPlan"
+        ],
+        "title": "GoalHistoryItem"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -998,6 +1066,13 @@
             },
             "type": "array",
             "title": "Skilltags"
+          },
+          "goalHistory": {
+            "items": {
+              "$ref": "#/components/schemas/GoalHistoryItem"
+            },
+            "type": "array",
+            "title": "Goalhistory"
           },
           "activePlan": {
             "anyOf": [
@@ -1304,6 +1379,57 @@
         ],
         "title": "TagOptionsResponse"
       },
+      "TaskCheckInOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "whatDone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatdone"
+          },
+          "whatProduced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatproduced"
+          },
+          "problems": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problems"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "createdAt"
+        ],
+        "title": "TaskCheckInOut"
+      },
       "TaskNodeOut": {
         "properties": {
           "id": {
@@ -1376,6 +1502,16 @@
           "sortOrder": {
             "type": "integer",
             "title": "Sortorder"
+          },
+          "checkIn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskCheckInOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

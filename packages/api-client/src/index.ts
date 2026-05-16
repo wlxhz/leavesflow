@@ -4,6 +4,7 @@ import type {
   AuthResponse,
   CheckInResponse,
   CreateGoalResponse,
+  GoalDetailResponse,
   MeResponse,
   PlanResponse,
   TagOptionsResponse,
@@ -99,6 +100,10 @@ export class LeavesFlowClient {
 
   getPlan(goalId: string) {
     return this.request<PlanResponse>(`/goals/${goalId}/plan`)
+  }
+
+  getGoal(goalId: string) {
+    return this.request<GoalDetailResponse>(`/goals/${goalId}`)
   }
 
   getActivePlan() {

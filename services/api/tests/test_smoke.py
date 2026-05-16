@@ -45,10 +45,16 @@ def test_mvp_flow_smoke(monkeypatch) -> None:
         me = client.get("/api/v1/me", headers=headers)
         assert me.status_code == 200
         assert me.json()["user"]["username"] == username
+        assert me.json()["goalHistory"] == []
 
         goal = client.post("/api/v1/goals", json={"rawInput": "做一个AI网站", "profileSnapshot": payload}, headers=headers)
         assert goal.status_code == 201
         goal_id = goal.json()["id"]
+
+        me_after_goal = client.get("/api/v1/me", headers=headers)
+        assert me_after_goal.status_code == 200
+        assert len(me_after_goal.json()["goalHistory"]) == 1
+        assert me_after_goal.json()["goalHistory"][0]["hasPlan"] is False
 
         plan = client.post(f"/api/v1/goals/{goal_id}/plan:generate", json={}, headers=headers)
         assert plan.status_code == 200
@@ -62,11 +68,29 @@ def test_mvp_flow_smoke(monkeypatch) -> None:
 
         check_in = client.post(
             f"/api/v1/tasks/{first_task['id']}/check-ins",
-            json={"whatDone": "我明确了最小交付范围。"},
+            json={
+                "whatDone": "我明确了最小交付范围。",
+                "whatProduced": "一份范围说明。",
+                "problems": "暂无。",
+            },
             headers=headers,
         )
         assert check_in.status_code == 201
         assert check_in.json()["newSkillTags"][0]["prompt"]
+
+        goal_detail = client.get(f"/api/v1/goals/{goal_id}", headers=headers)
+        assert goal_detail.status_code == 200
+        goal_detail_json = goal_detail.json()
+        assert goal_detail_json["plan"]["stages"][0]["tasks"][0]["checkIn"]["whatDone"] == "我明确了最小交付范围。"
+        assert goal_detail_json["plan"]["stages"][0]["tasks"][0]["checkIn"]["whatProduced"] == "一份范围说明。"
+        assert goal_detail_json["plan"]["stages"][0]["tasks"][0]["checkIn"]["problems"] == "暂无。"
+
+        me_after_check_in = client.get("/api/v1/me", headers=headers)
+        assert me_after_check_in.status_code == 200
+        history = me_after_check_in.json()["goalHistory"]
+        assert history[0]["status"] == "completed"
+        assert history[0]["completedTasks"] == 1
+        assert history[0]["totalTasks"] == 1
 
         updated = client.put("/api/v1/me", json={"displayName": "更新后的用户"}, headers=headers)
         assert updated.status_code == 200

@@ -61,6 +61,19 @@ export interface SkillTag {
   updatedAt: string
 }
 
+export interface GoalHistoryItem {
+  id: string
+  title: string
+  rawInput: string
+  status: GoalStatus
+  goalSummary?: string | null
+  createdAt: string
+  updatedAt: string
+  completedTasks: number
+  totalTasks: number
+  hasPlan: boolean
+}
+
 export interface UserAccount {
   id: string
   username: string
@@ -80,6 +93,7 @@ export interface MeResponse {
   user: UserAccount
   tagProfile: UserTagProfile
   skillTags: SkillTag[]
+  goalHistory: GoalHistoryItem[]
   activePlan?: ActivePlanResponse | null
 }
 
@@ -115,6 +129,13 @@ export interface TaskNode {
   predictedSkillTags: string[]
   status: TaskStatus
   sortOrder: number
+  checkIn?: {
+    id: string
+    whatDone?: string | null
+    whatProduced?: string | null
+    problems?: string | null
+    createdAt: string
+  } | null
 }
 
 export interface Stage {
@@ -152,6 +173,17 @@ export interface CheckInResponse {
     source: string
     reason: string
   }>
+}
+
+export interface GoalDetailResponse {
+  id: string
+  title: string
+  rawInput: string
+  status: GoalStatus
+  goalSummary?: string | null
+  profileSnapshot: UserTagProfile
+  createdAt: string
+  plan?: PlanResponse | null
 }
 
 export interface ApiErrorBody {

@@ -28,6 +28,7 @@ from .schemas import (
     CreateGoalResponse,
     GeneratePlanRequest,
     GoalDetailResponse,
+    GoalHistoryItem,
     LoginRequest,
     MeResponse,
     PlanResponse,
@@ -41,6 +42,7 @@ from .schemas import (
 )
 from .services import (
     current_active_plan,
+    goal_history_items,
     current_profile_ids,
     current_profile_out,
     list_tag_options,
@@ -191,6 +193,7 @@ def get_me(
     skill_rows = db.scalars(
         select(SkillTag).where(SkillTag.user_id == user_id).order_by(SkillTag.updated_at.desc())
     ).all()
+    active_plan = current_active_plan(db, user_id)
     return MeResponse(
         userId=user_id,
         user=_user_out(user),
@@ -209,7 +212,8 @@ def get_me(
             )
             for row in skill_rows
         ],
-        activePlan=current_active_plan(db, user_id),
+        goalHistory=goal_history_items(db, user_id),
+        activePlan=active_plan,
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .default_tags import CATEGORY_NAMES
@@ -10,12 +10,14 @@ from .schemas import (
     ActivePlanResponse,
     CheckInSkillOut,
     DecompositionResult,
+    GoalHistoryItem,
     PlanResponse,
     SelectedTagOut,
     StageOut,
     TagOptionCategoryOut,
     TagOptionOut,
     TaskNodeOut,
+    TaskCheckInOut,
     UserTagProfileIds,
     UserTagProfileOut,
 )
@@ -204,6 +206,10 @@ def plan_to_response(db: Session, goal: Goal) -> PlanResponse | None:
     stages = db.scalars(select(Stage).where(Stage.goal_id == goal.id).order_by(Stage.sort_order)).all()
     if not stages:
         return None
+    check_ins = {
+        row.task_node_id: row
+        for row in db.scalars(select(TaskCheckIn).where(TaskCheckIn.goal_id == goal.id)).all()
+    }
     stage_items: list[StageOut] = []
     for stage in stages:
         tasks = db.scalars(
@@ -230,6 +236,17 @@ def plan_to_response(db: Session, goal: Goal) -> PlanResponse | None:
                         predictedSkillTags=loads_json(task.predicted_skill_tags),
                         status=task.status,
                         sortOrder=task.sort_order,
+                        checkIn=(
+                            TaskCheckInOut(
+                                id=check_in.id,
+                                whatDone=check_in.what_done,
+                                whatProduced=check_in.what_produced,
+                                problems=check_in.problems,
+                                createdAt=check_in.created_at,
+                            )
+                            if (check_in := check_ins.get(task.id))
+                            else None
+                        ),
                     )
                     for task in tasks
                 ],
@@ -274,6 +291,37 @@ def current_active_plan(db: Session, user_id: str) -> ActivePlanResponse | None:
             goal.updated_at = utc_now()
     db.commit()
     return None
+
+
+def goal_history_items(db: Session, user_id: str) -> list[GoalHistoryItem]:
+    goals = db.scalars(select(Goal).where(Goal.user_id == user_id).order_by(Goal.created_at.desc())).all()
+    history: list[GoalHistoryItem] = []
+    for goal in goals:
+        has_plan = db.scalar(select(Stage.id).where(Stage.goal_id == goal.id).limit(1)) is not None
+        total_count = db.scalar(
+            select(func.count()).select_from(TaskNode).where(TaskNode.goal_id == goal.id)
+        ) or 0
+        completed_count = db.scalar(
+            select(func.count()).select_from(TaskNode).where(
+                TaskNode.goal_id == goal.id,
+                TaskNode.status == "completed",
+            )
+        ) or 0
+        history.append(
+            GoalHistoryItem(
+                id=goal.id,
+                title=goal.title,
+                rawInput=goal.raw_input,
+                status=goal.status,
+                goalSummary=goal.goal_summary,
+                createdAt=goal.created_at,
+                updatedAt=goal.updated_at,
+                completedTasks=int(completed_count),
+                totalTasks=int(total_count),
+                hasPlan=has_plan,
+            )
+        )
+    return history
 
 
 def mark_goal_completed_if_needed(db: Session, goal: Goal) -> None:
