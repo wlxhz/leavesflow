@@ -9,8 +9,14 @@
   "scripts": {
     "dev:web": "npm --workspace @leavesflow/web run dev",
     "build:web": "npm --workspace @leavesflow/web run build",
+    "build:android": "npm run build:web && npx cap sync android && cd android && gradlew.bat --init-script gradle-mirrors.init.gradle assembleDebug",
+    "build:android:linux": "npm run build:web && npx cap sync android && cd android && ./gradlew --init-script gradle-mirrors.init.gradle assembleDebug",
     "typecheck": "npm --workspace @leavesflow/web run typecheck",
     "lint": "npm --workspace @leavesflow/web run lint"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4"
+  }
 }

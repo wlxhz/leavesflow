@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">leavesflow</string>
+    <string name="title_activity_main">leavesflow</string>
+    <string name="package_name">cn.huickathon.syt.leavesflow</string>
+    <string name="custom_url_scheme">cn.huickathon.syt.leavesflow</string>
+</resources>
