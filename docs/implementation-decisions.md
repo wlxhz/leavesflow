@@ -20,6 +20,7 @@
 - 本地后端端口：`8000`。
 - 生产接口采用同域名路径：`https://leavesflow.syt.huickathon.cn/api/v1`。
 - CORS 开发环境放行 `localhost:5173` 和 `127.0.0.1:5173`，生产放行 `leavesflow.syt.huickathon.cn`。
+- Android Capacitor WebView 还必须放行 `https://localhost`，并保留 `capacitor://localhost` 兼容来源；否则 APK 真机请求会报 `Failed to fetch`。
 - V1 暂不做 Docker。
 
 ## 3. 目标输入
@@ -55,5 +56,24 @@
 ## 7. AI 与 Mock
 
 - 真实调用使用 OpenAI 兼容 `/chat/completions`。
-- 当 `app.env=dev` 且 `openai_compatible.api_key` 为空时，启用 Mock AI。
-- Mock AI 仅用于本地开发跑通闭环。
+- 当前运行时代码不再启用 Mock AI fallback。
+- 当 `openai_compatible.base_url` 或 `openai_compatible.api_key` 缺失时，接口显式返回 `AI_NOT_CONFIGURED`。
+- 测试中可以 monkeypatch `AIClient` 使用 fixture，但测试 fixture 不进入运行时主路径。
+
+## 8. 移动端封装
+
+- 第一阶段移动端采用 Capacitor 封装现有 React Web 应用，不直接重写为 React Native。
+- 当前只交付 Android debug APK，iOS 暂缓。
+- App 名称固定为 `leavesflow`，包名固定为 `cn.huickathon.syt.leavesflow`。
+- 原生环境 API 地址固定为 `https://leavesflow.syt.huickathon.cn/api/v1`。
+- `apps/mobile` 继续保留为 React Native 占位目录，不代表当前正式移动端实现。
+- 详细技术路线见 `docs/mobile-packaging-and-deployment-guide.md`。
+
+## 9. 生产部署
+
+- 前后端部署在同一台服务器，并通过同一域名提供服务。
+- Nginx 负责静态前端、HTTPS 和 `/api/v1` 反向代理。
+- FastAPI 只监听 `127.0.0.1:8000`，由 systemd 常驻。
+- 生产 Web 使用同域路径 `/api/v1`；本地开发 API 明确使用 `http://127.0.0.1:8000/api/v1`，避免 `localhost` 解析到 IPv6 `::1` 时后端不可达。
+- 当前本地手动测试优先使用 `npm run build:web` + `npm --workspace @leavesflow/web run preview`。preview 固定 `5173`，并把 `/api` 代理到 `127.0.0.1:8000`，用于规避 Windows 中文路径下 Vite dev optimizer 白屏问题。
+- 当前首次部署使用现有 SQLite 数据库快照，后续如进入正式生产阶段，应补充备份、迁移和发布流程。

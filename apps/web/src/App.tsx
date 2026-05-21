@@ -36,7 +36,7 @@ import {
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { AUTH_TOKEN_STORAGE_KEY, api, clearAuthToken, setAuthToken } from './api'
 
-type ViewKey = 'goal' | 'plan' | 'skills' | 'user'
+type ViewKey = 'goal' | 'plan' | 'skills' | 'user' | 'history'
 type AuthMode = 'login' | 'register'
 type RouteTask = PlanResponse['stages'][number]['tasks'][number] & { stageTitle: string }
 type RecommendationKind = 'tool' | 'resource' | 'collaborator'
@@ -212,7 +212,7 @@ export function App() {
     }
   }
 
-  function applyMeState(meData: MeResponse) {
+  function applyMeState(meData: MeResponse, options: { preserveView?: boolean } = {}) {
     const profile = profileFromMe(meData)
     setMe(meData)
     setBaseProfile(profile)
@@ -220,7 +220,9 @@ export function App() {
     setHistoryItems(meData.goalHistory ?? [])
     if (meData.activePlan) {
       setPlan(meData.activePlan)
-      setView('plan')
+      if (!options.preserveView) {
+        setView('plan')
+      }
       const firstPending = getAllTasks(meData.activePlan).find((task) => task.status !== 'completed')
       setActiveTaskId(firstPending?.id ?? meData.activePlan.stages[0]?.tasks[0]?.id ?? null)
     }
@@ -337,7 +339,7 @@ export function App() {
     setError('')
     try {
       const meData = await api.getMe()
-      applyMeState(meData)
+      applyMeState(meData, { preserveView: true })
       setMessage('历史路径已更新。')
     } catch (err) {
       setError(errorMessage(err, '刷新历史路径失败'))
@@ -353,7 +355,7 @@ export function App() {
       const detail = await api.getGoal(goalId)
       setHistoryDetail(detail)
       setHistoryExpandedGoalId(goalId)
-      setView('user')
+      setView('history')
     } catch (err) {
       setError(errorMessage(err, '加载路径历史失败'))
     } finally {
@@ -364,6 +366,18 @@ export function App() {
   function closeHistoryDetail() {
     setHistoryDetail(null)
     setHistoryExpandedGoalId(null)
+  }
+
+  function openHistoryList() {
+    setHistoryDetail(null)
+    setHistoryExpandedGoalId(null)
+    setView('history')
+  }
+
+  function backToUserFromHistory() {
+    setHistoryDetail(null)
+    setHistoryExpandedGoalId(null)
+    setView('user')
   }
 
   async function createAndGenerateGoal() {
@@ -523,7 +537,22 @@ export function App() {
             onRefreshHistory={refreshHistory}
             onOpenHistoryGoal={openHistoryGoal}
             onCloseHistoryDetail={closeHistoryDetail}
+            onViewAllHistory={openHistoryList}
             onLogout={logout}
+          />
+        )}
+
+        {view === 'history' && (
+          <HistoryPage
+            historyItems={historyItems}
+            historyDetail={historyDetail}
+            historyExpandedGoalId={historyExpandedGoalId}
+            historyLoadingGoalId={historyLoadingGoalId}
+            loading={loading}
+            onRefreshHistory={refreshHistory}
+            onOpenHistoryGoal={openHistoryGoal}
+            onCloseHistoryDetail={closeHistoryDetail}
+            onBackToUser={backToUserFromHistory}
           />
         )}
       </div>
@@ -555,7 +584,8 @@ function BottomNav({
   completedCount: number
   totalTasks: number
 }) {
-  const items: Array<{ key: ViewKey; label: string; icon: typeof PenLine }> = [
+  const navView = view === 'history' ? 'user' : view
+  const items: Array<{ key: Exclude<ViewKey, 'history'>; label: string; icon: typeof PenLine }> = [
     { key: 'goal', label: '目标', icon: PenLine },
     { key: 'plan', label: '路径', icon: Route },
     { key: 'skills', label: '技能', icon: Sparkles },
@@ -567,7 +597,7 @@ function BottomNav({
         <div className="grid grid-cols-4 gap-1">
           {items.map((item) => {
             const Icon = item.icon
-            const active = view === item.key
+            const active = navView === item.key
             return (
               <button
                 key={item.key}
@@ -635,8 +665,7 @@ function AuthPanel({
     <main className="grid gap-4 lg:grid-cols-[0.84fr_1.16fr]">
       <section className="rounded-[26px] border border-line bg-white/84 p-5 shadow-paper sm:p-6">
         <BrandMark />
-        <p className="mt-6 text-sm font-bold text-leaf">V1.2 账号体系</p>
-        <h1 className="mt-1 text-3xl font-black sm:text-4xl">{mode === 'register' ? '创建你的任务资产库' : '回到你的任务路径'}</h1>
+        <h1 className="mt-6 text-3xl font-black sm:text-4xl">{mode === 'register' ? '创建你的任务资产库' : '回到你的任务路径'}</h1>
         <p className="mt-3 text-sm leading-6 text-ink/64">
           注册后，画像、任务路径、打卡记录和能力 Prompt 都会保存在本地数据库里。
         </p>
@@ -1391,6 +1420,7 @@ function UserPanel({
   onRefreshHistory,
   onOpenHistoryGoal,
   onCloseHistoryDetail,
+  onViewAllHistory,
   onLogout,
 }: {
   me: MeResponse
@@ -1408,12 +1438,13 @@ function UserPanel({
   onRefreshHistory: () => void
   onOpenHistoryGoal: (goalId: string) => void
   onCloseHistoryDetail: () => void
+  onViewAllHistory: () => void
   onLogout: () => void
 }) {
   const activeHistoryCount = historyItems.filter((item) => item.status === 'active').length
   const completedHistoryCount = historyItems.filter((item) => item.status === 'completed').length
-  const detailPlan = historyDetail?.plan ?? null
-  const detailTasks = detailPlan ? getAllTasks(detailPlan) : []
+  const recentHistoryItems = historyItems.slice(0, 3)
+  const hasMoreHistory = historyItems.length > recentHistoryItems.length
 
   return (
     <main className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
@@ -1462,16 +1493,16 @@ function UserPanel({
           <span className="rounded-full bg-butter/70 px-3 py-1">已归档 {completedHistoryCount}</span>
         </div>
 
-        {!historyDetail ? (
-          historyItems.length === 0 ? (
-            <div className="mt-5 rounded-[24px] border border-dashed border-line bg-paper/72 p-6 text-center">
-              <Map className="mx-auto text-leaf" size={32} />
-              <h3 className="mt-3 text-lg font-black">还没有路径历史</h3>
-              <p className="mt-2 text-sm leading-6 text-ink/64">完成一次目标生成并打卡后，这里会自动出现路径卡片。</p>
-            </div>
-          ) : (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-              {historyItems.map((item) => (
+        {historyItems.length === 0 ? (
+          <div className="mt-5 rounded-[24px] border border-dashed border-line bg-paper/72 p-6 text-center">
+            <Map className="mx-auto text-leaf" size={32} />
+            <h3 className="mt-3 text-lg font-black">还没有路径历史</h3>
+            <p className="mt-2 text-sm leading-6 text-ink/64">完成一次目标生成并打卡后，这里会自动出现路径卡片。</p>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 grid gap-3">
+              {recentHistoryItems.map((item) => (
                 <HistoryGoalCard
                   key={item.id}
                   item={item}
@@ -1481,13 +1512,15 @@ function UserPanel({
                 />
               ))}
             </div>
-          )
-        ) : (
-          <HistoryDetailPanel
-            detail={historyDetail}
-            loading={loading}
-            onBack={onCloseHistoryDetail}
-          />
+            <button
+              className="soft-focus-ring mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-paper px-4 py-3 text-sm font-black hover:bg-white/82"
+              onClick={onViewAllHistory}
+            >
+              <ExternalLink size={17} />
+              查看全部路径历史
+              {hasMoreHistory && <span className="rounded-full bg-mint px-2 py-0.5 text-xs text-leaf">剩余 {historyItems.length - recentHistoryItems.length}</span>}
+            </button>
+          </>
         )}
       </section>
 
@@ -1566,6 +1599,94 @@ function HistoryGoalCard({
         </div>
       </div>
     </button>
+  )
+}
+
+function HistoryPage({
+  historyItems,
+  historyDetail,
+  historyExpandedGoalId,
+  historyLoadingGoalId,
+  loading,
+  onRefreshHistory,
+  onOpenHistoryGoal,
+  onCloseHistoryDetail,
+  onBackToUser,
+}: {
+  historyItems: GoalHistoryItem[]
+  historyDetail: GoalDetailResponse | null
+  historyExpandedGoalId: string | null
+  historyLoadingGoalId: string | null
+  loading: boolean
+  onRefreshHistory: () => void
+  onOpenHistoryGoal: (goalId: string) => void
+  onCloseHistoryDetail: () => void
+  onBackToUser: () => void
+}) {
+  const activeHistoryCount = historyItems.filter((item) => item.status === 'active').length
+  const completedHistoryCount = historyItems.filter((item) => item.status === 'completed').length
+
+  return (
+    <main className="grid gap-4">
+      <section className="rounded-[26px] border border-line bg-white/82 p-4 shadow-paper sm:p-6">
+        <BrandMark />
+        <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <button className="soft-focus-ring inline-flex items-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black" onClick={onBackToUser}>
+              <ArrowLeft size={17} />
+              返回用户页
+            </button>
+            <h1 className="mt-4 flex items-center gap-2 text-3xl font-black">
+              <Route size={26} className="text-leaf" />
+              全部路径历史
+            </h1>
+            <p className="mt-3 max-w-3xl text-sm leading-7 text-ink/64">
+              在这里查看所有生成过的任务路径。点开任意卡片，可以进入完整路径内容，查看每个节点的打卡记录。
+            </p>
+          </div>
+          <button
+            className="soft-focus-ring inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-paper px-4 py-2 text-sm font-black"
+            onClick={onRefreshHistory}
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
+            刷新历史
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2 text-xs font-black text-ink/60">
+          <span className="rounded-full bg-mint px-3 py-1 text-leaf">{historyItems.length} 条路径</span>
+          <span className="rounded-full bg-paper px-3 py-1">进行中 {activeHistoryCount}</span>
+          <span className="rounded-full bg-butter/70 px-3 py-1">已归档 {completedHistoryCount}</span>
+        </div>
+      </section>
+
+      <section className="rounded-[26px] border border-line bg-white/78 p-4 shadow-paper sm:p-5">
+        {!historyDetail ? (
+          historyItems.length === 0 ? (
+            <div className="rounded-[24px] border border-dashed border-line bg-paper/72 p-8 text-center">
+              <Map className="mx-auto text-leaf" size={34} />
+              <h2 className="mt-3 text-xl font-black">还没有路径历史</h2>
+              <p className="mt-2 text-sm leading-6 text-ink/64">完成一次目标生成并打卡后，这里会自动出现路径卡片。</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {historyItems.map((item) => (
+                <HistoryGoalCard
+                  key={item.id}
+                  item={item}
+                  loading={historyLoadingGoalId === item.id}
+                  active={historyExpandedGoalId === item.id}
+                  onOpen={() => onOpenHistoryGoal(item.id)}
+                />
+              ))}
+            </div>
+          )
+        ) : (
+          <HistoryDetailPanel detail={historyDetail} loading={loading} onBack={onCloseHistoryDetail} />
+        )}
+      </section>
+    </main>
   )
 }
 

@@ -1,7 +1,7 @@
 import { LeavesFlowClient } from '@leavesflow/api-client'
 import { Capacitor } from '@capacitor/core'
 
-const devBaseUrl = 'http://localhost:8000/api/v1'
+const devBaseUrl = 'http://127.0.0.1:8000/api/v1'
 const productionBaseUrl = '/api/v1'
 const nativeBaseUrl = 'https://leavesflow.syt.huickathon.cn/api/v1'
 const baseUrl =

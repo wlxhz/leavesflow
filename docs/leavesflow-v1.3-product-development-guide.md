@@ -2,10 +2,16 @@
 
 版本日期：2026-05-17
 适用分支：`v1`
-适用范围：LeavesFlow V1.3 Web + API 当前实现
+适用范围：LeavesFlow V1.3 Web + API 当前实现，以及 Android Capacitor 封装基线
 文档状态：V1.3 当前产品与代码基线说明。文件名保留 `v1.2` 是为了兼容已有引用，正文以 V1.3 为准。
 
 本文面向第一次接触 LeavesFlow 的开发者。读完后，应能理解当前产品闭环、用户注册体系、数据持久化、AI 中转调用方式、前端页面结构、接口合同、测试方式和后续迭代边界。
+
+Android 封装、服务器部署和构建环境细节见：
+
+```text
+docs/mobile-packaging-and-deployment-guide.md
+```
 
 ## 1. 产品定位
 
@@ -59,7 +65,8 @@ V1.3 继续围绕真实用户闭环演进，这一版的重点是把“历史路
 - 历史详情会回显每个节点在打卡时用户自己填写的 `whatDone`、`whatProduced`、`problems`。
 - `GET /me` 现在会返回 `goalHistory`，供用户页直接渲染历史小卡片。
 - `GET /goals/{goalId}` 和 `GET /goals/{goalId}/plan` 的任务节点会回传 `checkIn`，便于历史详情直接展开。
-- 路径历史当前不分页，默认展示当前用户的全部历史目标。
+- 用户页路径历史默认折叠，只展示最近 3 条历史路径卡片；其余路径通过“查看全部路径历史”进入独立历史页查看。
+- 独立历史页展示当前用户的全部历史目标，并复用同一套历史详情面板查看完整路径与节点打卡内容。
 - 用户页仍保留长期画像维护和退出登录；展示名称编辑入口在 V1.3 前端页面中不再单独展示。
 
 ## 2. 产品原则
@@ -279,11 +286,15 @@ Copy-Item config/config.example.json config/config.json
     "allow_origins": [
       "http://localhost:5173",
       "http://127.0.0.1:5173",
-      "https://leavesflow.syt.huickathon.cn"
+      "https://leavesflow.syt.huickathon.cn",
+      "https://localhost",
+      "capacitor://localhost"
     ]
   }
 }
 ```
+
+`https://localhost` 和 `capacitor://localhost` 用于 Android Capacitor WebView。缺少这两项时，APK 真机登录/注册会在前端表现为 `Failed to fetch`，后端预检请求会返回 `Disallowed CORS origin`。
 
 AI 配置规则：
 
@@ -316,7 +327,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_api_dev.ps1
 健康检查：
 
 ```text
-http://localhost:8000/api/v1/health
+http://127.0.0.1:8000/api/v1/health
 ```
 
 期望返回：
@@ -329,7 +340,8 @@ http://localhost:8000/api/v1/health
 
 ```powershell
 npm install
-npm run dev:web
+npm run build:web
+npm --workspace @leavesflow/web run preview
 ```
 
 打开：
@@ -337,6 +349,8 @@ npm run dev:web
 ```text
 http://localhost:5173
 ```
+
+本地手动测试优先使用 build + preview 模式。当前 Windows 中文路径下，Vite dev dependency optimizer 可能出现 `Cannot read properties of undefined (reading 'imports')`，导致 React 依赖没有被正确预构建并出现白屏；preview 直接运行生产构建产物，且通过 `/api` 代理到 `http://127.0.0.1:8000`。
 
 前端固定使用 `5173`。不要改用 `5174` 作为主调试端口。若端口被占用，先结束占用进程再重启。
 
@@ -1058,7 +1072,9 @@ apps/web/src/styles.css
 初始化在 `apps/web/src/api.ts`：
 
 ```ts
-const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
+const devBaseUrl = 'http://127.0.0.1:8000/api/v1'
+const productionBaseUrl = '/api/v1'
+const nativeBaseUrl = 'https://leavesflow.syt.huickathon.cn/api/v1'
 ```
 
 token 持久化：
@@ -1071,10 +1087,10 @@ HTTP 封装在 `packages/api-client/src/index.ts`。
 
 ### 9.2 视图状态
 
-当前前端有 4 个主视图：
+当前前端有 5 个内部视图，其中底部导航仍展示 4 个主入口：
 
 ```ts
-type ViewKey = 'goal' | 'plan' | 'skills' | 'user'
+type ViewKey = 'goal' | 'plan' | 'skills' | 'user' | 'history'
 ```
 
 底部导航：
@@ -1207,16 +1223,39 @@ UserPanel
 
 - 展示当前账号、用户名、展示名称。
 - 支持维护长期画像标签。
-- 展示路径历史小卡片。
-- 点击小卡片后加载该目标的完整路径详情。
+- 用户页只展示最近 3 条路径历史小卡片。
+- 超出 3 条的历史路径通过“查看全部路径历史”进入独立历史页查看。
+- 点击任意小卡片后加载该目标的完整路径详情。
 - 详情页逐节点展示 `whatDone`、`whatProduced`、`problems`。
 - 支持退出登录。
 
-## 10. 移动端与 PWA 预留
+## 10. 移动端与 PWA
 
-当前 `apps/mobile` 只是 React Native 占位目录，没有真实实现。
+当前移动端路线分为两层：
 
-Web 侧已有移动端预留：
+- `apps/mobile` 仍然只是 React Native 占位目录，没有真实实现。
+- Android 已采用 Capacitor 封装现有 React Web 应用，形成可安装 debug APK。
+
+当前 Android 封装基线：
+
+- App 名称：`leavesflow`
+- 包名：`cn.huickathon.syt.leavesflow`
+- Web 资源来源：`apps/web/dist`
+- 原生环境 API：`https://leavesflow.syt.huickathon.cn/api/v1`
+- 线上 Web API：`/api/v1`
+- App 图标来源：`app_loge_demo.png`
+
+相关文件：
+
+```text
+capacitor.config.ts
+apps/web/src/api.ts
+android/
+scripts/generate_android_icons.ps1
+docs/mobile-packaging-and-deployment-guide.md
+```
+
+Web 侧已有移动端适配：
 
 - 底部固定导航。
 - 推荐链接 native bridge。
@@ -1243,9 +1282,27 @@ Web/PWA 行为：
 - 不使用 `target="_blank"`。
 - 前端只允许 `http:` 和 `https:` URL。
 
+Android 构建命令：
+
+```powershell
+npm run build:android
+```
+
+Linux 构建命令：
+
+```bash
+npm run build:android:linux
+```
+
+当前已知构建前提：
+
+- Capacitor 8 CLI 需要 Node.js 22+。
+- 当前 Android 构建需要 JDK 21。
+- Linux 服务器构建需要正确配置 Android SDK 与 `local.properties`。
+
 ## 11. Vite 配置说明
 
-`apps/web/vite.config.ts` 中有两个重要配置：
+`apps/web/vite.config.ts` 中有几个重要配置：
 
 ```ts
 const appRoot = fileURLToPath(new URL('.', import.meta.url))
@@ -1253,9 +1310,23 @@ const appRoot = fileURLToPath(new URL('.', import.meta.url))
 export default defineConfig({
   root: appRoot,
   cacheDir: '../../node_modules/.vite/leavesflow-web',
+  optimizeDeps: {
+    noDiscovery: true,
+    include: [],
+  },
   plugins: [react()],
-  server: {
+  preview: {
+    host: '::',
     port: 5173,
+    strictPort: true,
+    proxy: {
+      '/api': 'http://127.0.0.1:8000',
+    },
+  },
+  server: {
+    host: '::',
+    port: 5173,
+    strictPort: true,
   },
 })
 ```
@@ -1264,6 +1335,9 @@ export default defineConfig({
 
 - 当前项目路径包含中文，显式固定 `root` 可以减少 Windows 路径解析问题。
 - Vite cache 放到仓库根 `node_modules/.vite/leavesflow-web`，避免 `apps/web/node_modules/.vite` 权限问题。
+- `server.host = '::'` 让 `localhost`、`127.0.0.1` 和 IPv6 `::1` 都能访问前端，避免浏览器解析到 IPv6 时拒绝连接。
+- preview 模式配置 `/api` 代理，便于本地用生产构建产物测试真实后端接口。
+- `optimizeDeps.noDiscovery` 用于规避当前本地路径和 Vite 5 optimizer 的依赖扫描异常；本地手动测试优先使用 build + preview。
 - 不要轻易恢复旧的 `rollupOptions.input`。
 
 ## 12. 测试与验证
@@ -1467,6 +1541,8 @@ V1.3 暂不支持：
 - Alembic migration。
 - Docker 部署。
 - React Native 真实移动端实现。
+- iOS 工程。
+- Android release 签名包。
 - Service worker 离线缓存。
 
 ## 16. 推荐开发顺序
@@ -1505,6 +1581,13 @@ pytest -q
 - 同步 `packages/api-client`。
 - 重新导出 `docs/openapi.yaml`。
 - 更新本文相关章节。
+
+如果修改移动端封装或部署：
+
+- 同步更新 `docs/mobile-packaging-and-deployment-guide.md`。
+- 如果改动了 API 路由策略，核对 `apps/web/src/api.ts` 的三种环境地址。
+- 如果改动了原生配置，重新执行 `npx cap sync android`。
+- 如果改动了 Android 资源，重新验证 launcher icon、splash 和 debug APK 构建。
 
 提交前确认没有敏感文件：
 
