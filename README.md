@@ -1,6 +1,6 @@
-# LeavesFlow MVP V1
+# LeavesFlow
 
-LeavesFlow V1 是一个面向 Vibe Coding 的 AI 任务导航闭环：
+LeavesFlow 是一个面向 Vibe Coding 的 AI 任务导航闭环：
 
 ```text
 标签 Prompt 封装 -> 目标输入 -> AI 拆解任务路径 -> 用户打卡 -> 能力 Prompt 沉淀 -> 回写用户画像
@@ -12,24 +12,38 @@ LeavesFlow V1 是一个面向 Vibe Coding 的 AI 任务导航闭环：
 - 后端：Python 3.11+ + FastAPI + SQLAlchemy 2.x
 - 数据库：SQLite
 - 包管理：前端 npm workspaces，后端 uv
+- 移动端：Capacitor Android 封装现有 Web 应用
 - OpenAPI：Pydantic/FastAPI 为源，导出 `docs/openapi.yaml`
 
 ## 目录结构
 
 ```text
 apps/
-  web/                 React Web PWA
-  mobile/              React Native 预留占位
+  web/                 用户端 React Web / PWA
+  admin/               后台管理端 React Web，生产路径 /admin
+  mobile/              移动端封装说明
 packages/
   shared-types/        前端共享 TypeScript 类型
   api-client/          手写 fetch API client
 services/
   api/                 FastAPI 后端
+android/               Capacitor Android 原生工程
 config/
   config.example.json  配置样例，不包含真实密钥
 docs/
-  implementation-decisions.md
+  ai-coding-project-index.md
+  leavesflow-v1.3-product-development-guide.md
+  mobile-packaging-and-deployment-guide.md
+  openapi.yaml
+pic/
+  app_loge_demo.png    App 图标源图
+  产品海报.png          产品视觉素材
+scripts/
+  run_api_dev.ps1
+  generate_android_icons.ps1
 ```
+
+更多文件职责请优先查看 `docs/ai-coding-project-index.md`。该索引用于后续 AI Coding 分层定位文件，避免重复全文读取项目。
 
 ## 配置
 
@@ -43,7 +57,6 @@ Copy-Item config/config.example.json config/config.json
 
 - 后端：`http://localhost:8000`
 - 前端：`http://localhost:5173`
-- Demo Token：`dev-demo-token`
 - 当 `app.env=dev` 且 `openai_compatible.api_key` 为空时，后端启用 Mock AI，便于本地跑通完整闭环。
 
 生产建议使用同域名部署：
@@ -88,6 +101,18 @@ npm run dev:web
 http://localhost:5173
 ```
 
+## 后台启动
+
+```powershell
+npm run dev:admin
+```
+
+本地后台默认访问：
+
+```text
+http://localhost:5174/admin/
+```
+
 ## 验证
 
 ```powershell
@@ -105,6 +130,21 @@ npm run build:web
 python C:\Users\王乐溪\.agents\skills\webapp-testing\scripts\with_server.py --server "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run_api_dev.ps1" --port 8000 --server "npm run dev:web" --port 5173 --timeout 60 -- python scripts/web_smoke_test.py
 ```
 
-## V1 范围
+## 文档入口
 
-V1 不做注册、社区、分享、自动 Agent 执行、复杂认证、付费体系、完整课程系统和 Docker 部署。移动端目录仅作为后续 React Native 占位。
+- AI Coding 文件索引：`docs/ai-coding-project-index.md`
+- V1.3 产品与维护主文档：`docs/leavesflow-v1.3-product-development-guide.md`
+- Android 封装与部署：`docs/mobile-packaging-and-deployment-guide.md`
+- AI 中转排查：`docs/ai-relay-troubleshooting.md`
+- 后台需求文档：`apps/admin/docs/admin-requirements.md`
+- 后台技术文档：`apps/admin/docs/admin-technical-spec.md`
+- 数据库查看说明：`apps/admin/docs/database-viewing-guide.md`
+- OpenAPI：`docs/openapi.yaml`
+
+## 文件整理规则
+
+- 根目录保留项目入口、配置、工作区和构建相关文件。
+- 通用文档统一放入 `docs/`。
+- 后台专属文档保留在 `apps/admin/docs/`，由后台 README 作为入口。
+- 图片素材统一放入 `pic/`。
+- 真实配置、数据库、日志、部署包和构建产物不进入源码文档索引。

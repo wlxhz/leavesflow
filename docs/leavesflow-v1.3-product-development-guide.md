@@ -209,8 +209,12 @@ apps/
     src/api.ts                 初始化 API client 与 token 持久化
     src/styles.css             Tailwind 入口和生成动画样式
     vite.config.ts             Vite 配置，固定 5173
+  admin/                       后台管理端，生产路径 /admin
+    src/App.tsx                后台核心页面、统计、用户清单、编辑删除
+    src/api.ts                 后台 API client 与管理密码请求头
+    docs/                      后台需求、技术和数据库查看文档
   mobile/
-    README.md                  React Native 预留占位
+    README.md                  Capacitor 移动端封装说明
 
 packages/
   shared-types/
@@ -238,14 +242,22 @@ config/
   config.example.json          示例配置，可提交
   config.json                  本地真实配置，不提交
 
+android/                       Capacitor Android 原生工程
+pic/
+  app_loge_demo.png            App 图标源图
+  产品海报.png                  产品视觉素材
+
 docs/
+  ai-coding-project-index.md   AI Coding 分层项目索引
   implementation-decisions.md
+  mobile-packaging-and-deployment-guide.md
   openapi.yaml                 OpenAPI 导出文件
-  leavesflow-v1.1-product-development-guide.md
+  leavesflow-v1.3-product-development-guide.md
 
 scripts/
   run_api_dev.ps1
   run_api_dev.cmd
+  generate_android_icons.ps1
   bugfix_ui_check.py
   web_smoke_test.py
   v11_ui_check.py
@@ -1243,7 +1255,7 @@ UserPanel
 - Web 资源来源：`apps/web/dist`
 - 原生环境 API：`https://leavesflow.syt.huickathon.cn/api/v1`
 - 线上 Web API：`/api/v1`
-- App 图标来源：`app_loge_demo.png`
+- App 图标来源：`pic/app_loge_demo.png`
 
 相关文件：
 

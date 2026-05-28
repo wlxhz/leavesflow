@@ -16,7 +16,7 @@ LeavesFlow 第一阶段移动端采用 **Capacitor 封装现有 React Web 应用
 
 - Android 工程已接入仓库，应用名为 `leavesflow`。
 - 包名为 `cn.huickathon.syt.leavesflow`。
-- App 图标使用仓库根目录 `app_loge_demo.png` 生成。
+- App 图标使用 `pic/app_loge_demo.png` 生成。
 - 原有 React Web 应用继续作为唯一业务 UI，不另起 React Native 界面层。
 - 原生 Android 包访问线上 API：`https://leavesflow.syt.huickathon.cn/api/v1`。
 - Web 生产环境访问同域 API：`/api/v1`。
@@ -53,7 +53,7 @@ apps/web/src/api.ts
 package.json
 android/
 scripts/generate_android_icons.ps1
-app_loge_demo.png
+pic/app_loge_demo.png
 ```
 
 ### 3.2 Capacitor 配置
@@ -252,7 +252,7 @@ android/gradle-mirrors.init.gradle
 当前要求：
 
 - App 名称固定为 `leavesflow`。
-- `app_loge_demo.png` 仅作为 App 图标使用，不作为站点 logo。
+- `pic/app_loge_demo.png` 仅作为 App 图标使用，不作为站点 logo。
 
 当前脚本：
 
@@ -262,7 +262,7 @@ scripts/generate_android_icons.ps1
 
 用途：
 
-- 基于 `app_loge_demo.png` 生成各密度 launcher icon。
+- 基于 `pic/app_loge_demo.png` 生成各密度 launcher icon。
 - 保持 Android 工程资源目录一致。
 
 后续如果要正式上架：

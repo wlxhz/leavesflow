@@ -1,5 +1,5 @@
 param(
-  [string]$Source = "app_loge_demo.png",
+  [string]$Source = "pic/app_loge_demo.png",
   [string]$ResRoot = "android/app/src/main/res"
 )
 
