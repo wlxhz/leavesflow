@@ -97,6 +97,37 @@ def test_mvp_flow_smoke(monkeypatch) -> None:
         assert updated.json()["user"]["displayName"] == "更新后的用户"
 
 
+def test_register_rolls_back_when_profile_write_fails(monkeypatch) -> None:
+    def fail_profile_skill_prompts(*args, **kwargs):
+        raise RuntimeError("profile seed failed")
+
+    monkeypatch.setattr("leavesflow_api.services.seed_profile_skill_prompts", fail_profile_skill_prompts)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        tag_options = client.get("/api/v1/tag-options")
+        assert tag_options.status_code == 200
+        categories = tag_options.json()["categories"]
+        username = f"rollback_{uuid.uuid4().hex[:8]}"
+
+        registered = client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": username,
+                "displayName": "Rollback 用户",
+                "password": "password123",
+                "profile": {
+                    "identityTagIds": [categories[0]["options"][0]["id"]],
+                    "backgroundTagIds": [categories[1]["options"][0]["id"]],
+                    "levelTagIds": [categories[2]["options"][1]["id"]],
+                },
+            },
+        )
+        assert registered.status_code == 500
+
+        login = client.post("/api/v1/auth/login", json={"username": username, "password": "password123"})
+        assert login.status_code == 401
+
+
 def _test_plan(raw_input: str) -> DecompositionResult:
     title = raw_input.strip()[:40]
     return DecompositionResult.model_validate(

@@ -5,6 +5,8 @@ dist/
 *.log
 logs/
 .deploy/
+.deploy*.tar.gz
+.deploy-*.tar.gz
 artifacts/
 *.tsbuildinfo
 .env

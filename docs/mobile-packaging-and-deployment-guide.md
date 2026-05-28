@@ -445,6 +445,38 @@ https://leavesflow.syt.huickathon.cn/api/v1/health
    - 如果仍以 Web UI 为主，可继续沿用 Capacitor。
    - 如果出现原生体验瓶颈，再评估 React Native 或原生重构。
 
-## 12. 一句话总结
+## 12. 2026-05-28 注册修复后的 APK 构建记录
+
+本次注册修复已完成：
+
+- 生产 API 已更新并重启。
+- 线上 Web 已更新到新的构建产物。
+- 生产接口随机用户名注册验证通过，并已删除测试账号。
+- Android WebView 来源 `https://localhost` 的注册接口 CORS 预检仍返回 200。
+
+APK 重新构建记录：
+
+```text
+本地 Windows：Gradle 可下载，但本机未配置 Android SDK，缺少 android/local.properties 或 ANDROID_HOME。
+服务器 Linux：Android SDK 已存在于 /opt/leavesflow/android-sdk。
+服务器已新增独立 JDK 21：/opt/leavesflow/jdks/jdk-21。
+使用 JAVA_HOME=/opt/leavesflow/jdks/jdk-21 运行 npm run build:android:linux，构建成功。
+```
+
+新版 debug APK 已覆盖到：
+
+```text
+服务器：/opt/leavesflow/app/artifacts/leavesflow-debug.apk
+本地：artifacts/leavesflow-debug.apk
+```
+
+APK 校验：
+
+```text
+大小：4631227 bytes
+SHA256：985e37e716bd166bbe797ae60bbe0c79b4ed3b97de08eea8584dde4fecbb1692
+```
+
+## 13. 一句话总结
 
 当前 LeavesFlow 已经从单纯 Web 产品推进到“**同一套 React 业务代码 + Android 原生壳 + 单机同域线上部署**”的第一阶段可安装形态；这条路线优先保证交付速度、复用率和后续演进空间。

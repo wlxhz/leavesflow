@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from .default_tags import CATEGORY_NAMES
 from .errors import AppError
-from .models import Goal, SkillTag, Stage, TagOption, TaskCheckIn, TaskNode, UserTagProfile
+from .models import AIUsageLog, Goal, SkillTag, Stage, TagOption, TaskCheckIn, TaskNode, UserTagProfile
 from .schemas import (
     ActivePlanResponse,
     CheckInSkillOut,
@@ -136,7 +136,7 @@ def profile_ids_to_out(db: Session, profile_ids: UserTagProfileIds) -> UserTagPr
     return UserTagProfileOut(**data)
 
 
-def get_or_create_profile(db: Session, user_id: str) -> UserTagProfile:
+def get_or_create_profile(db: Session, user_id: str, *, commit: bool = True) -> UserTagProfile:
     profile = db.get(UserTagProfile, user_id)
     if profile:
         return profile
@@ -152,14 +152,17 @@ def get_or_create_profile(db: Session, user_id: str) -> UserTagProfile:
         updated_at=now,
     )
     db.add(profile)
-    db.commit()
-    db.refresh(profile)
+    if commit:
+        db.commit()
+        db.refresh(profile)
+    else:
+        db.flush()
     return profile
 
 
-def update_profile(db: Session, user_id: str, profile_ids: UserTagProfileIds) -> UserTagProfileOut:
+def update_profile(db: Session, user_id: str, profile_ids: UserTagProfileIds, *, commit: bool = True) -> UserTagProfileOut:
     _validate_profile_ids(db, profile_ids)
-    profile = get_or_create_profile(db, user_id)
+    profile = get_or_create_profile(db, user_id, commit=commit)
     profile.identity_tag_ids = dumps_json(profile_ids.identityTagIds)
     profile.background_tag_ids = dumps_json(profile_ids.backgroundTagIds)
     profile.level_tag_ids = dumps_json(profile_ids.levelTagIds)
@@ -168,7 +171,10 @@ def update_profile(db: Session, user_id: str, profile_ids: UserTagProfileIds) ->
     profile.output_preference_tag_ids = dumps_json(profile_ids.outputPreferenceTagIds)
     profile.updated_at = utc_now()
     seed_profile_skill_prompts(db, user_id, profile_ids)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return profile_ids_to_out(db, profile_ids)
 
 
@@ -333,6 +339,49 @@ def mark_goal_completed_if_needed(db: Session, goal: Goal) -> None:
         return
     goal.status = "completed"
     goal.updated_at = utc_now()
+
+
+def record_ai_usage(
+    db: Session,
+    *,
+    user_id: str | None,
+    goal_id: str | None,
+    task_node_id: str | None = None,
+    operation: str,
+    model: str | None,
+    usage: dict | None,
+    status: str,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    latency_ms: int | None = None,
+) -> None:
+    usage = usage if isinstance(usage, dict) else {}
+    db.add(
+        AIUsageLog(
+            id=new_id(),
+            user_id=user_id,
+            goal_id=goal_id,
+            task_node_id=task_node_id,
+            operation=operation,
+            model=model,
+            prompt_tokens=_optional_int(usage.get("prompt_tokens")),
+            completion_tokens=_optional_int(usage.get("completion_tokens")),
+            total_tokens=_optional_int(usage.get("total_tokens")),
+            status=status,
+            error_code=error_code,
+            error_message=error_message[:1000] if error_message else None,
+            latency_ms=latency_ms,
+            created_at=utc_now(),
+        )
+    )
+    db.commit()
+
+
+def _optional_int(value: object) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def persist_plan(db: Session, goal: Goal, result: DecompositionResult) -> PlanResponse:

@@ -47,6 +47,10 @@ class SkillsConfig(BaseModel):
     registry_path: str = "./skills/registry.yaml"
 
 
+class AdminConfig(BaseModel):
+    access_password: str = ""
+
+
 class Settings(BaseModel):
     app: AppConfig
     database: DatabaseConfig
@@ -55,6 +59,7 @@ class Settings(BaseModel):
     cors: CORSConfig = Field(default_factory=CORSConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    admin: AdminConfig = Field(default_factory=AdminConfig)
 
 
 def _repo_root() -> Path:

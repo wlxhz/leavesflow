@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from .ai import AIClient
 from .auth import get_current_user_id
+from .admin import router as admin_router
 from .bootstrap import create_tables, seed_demo_data
 from .config import Settings, get_settings
 from .database import SessionLocal, get_db
@@ -51,6 +52,7 @@ from .services import (
     persist_plan,
     plan_to_response,
     profile_ids_to_out,
+    record_ai_usage,
     tag_context_for_profile,
     update_profile,
     validate_required_profile_ids,
@@ -81,6 +83,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(admin_router)
 
 
 @app.middleware("http")
@@ -158,9 +162,16 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
         created_at=now,
         updated_at=now,
     )
-    db.add(user)
-    db.commit()
-    profile = update_profile(db, user.id, payload.profile)
+    try:
+        db.add(user)
+        profile = update_profile(db, user.id, payload.profile, commit=False)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise AppError(409, "CONFLICT", "用户名已被注册") from exc
+    except Exception:
+        db.rollback()
+        raise
     return AuthResponse(token=token, user=_user_out(user), tagProfile=profile)
 
 
@@ -309,7 +320,32 @@ def generate_plan(
         raise AppError(404, "NOT_FOUND", "目标不存在")
     profile_ids = UserTagProfileIds.model_validate_json(goal.profile_snapshot)
     ai = AIClient(settings)
-    result = ai.generate_plan(goal.raw_input, tag_context_for_profile(db, profile_ids))
+    try:
+        result = ai.generate_plan(goal.raw_input, tag_context_for_profile(db, profile_ids))
+    except AppError as exc:
+        record_ai_usage(
+            db,
+            user_id=user_id,
+            goal_id=goal.id,
+            operation="generate_plan",
+            model=ai.last_model,
+            usage=ai.last_usage,
+            status="failed",
+            error_code=exc.code,
+            error_message=exc.message,
+            latency_ms=ai.last_latency_ms,
+        )
+        raise
+    record_ai_usage(
+        db,
+        user_id=user_id,
+        goal_id=goal.id,
+        operation="generate_plan",
+        model=ai.last_model,
+        usage=ai.last_usage,
+        status="success",
+        latency_ms=ai.last_latency_ms,
+    )
     return persist_plan(db, goal, result)
 
 
@@ -394,7 +430,35 @@ def create_check_in(
         },
         "checkIn": payload.model_dump(),
     }
-    extraction = AIClient(settings).extract_skills(ai_payload)
+    ai = AIClient(settings)
+    try:
+        extraction = ai.extract_skills(ai_payload)
+    except AppError as exc:
+        record_ai_usage(
+            db,
+            user_id=user_id,
+            goal_id=goal.id,
+            task_node_id=task.id,
+            operation="extract_skills",
+            model=ai.last_model,
+            usage=ai.last_usage,
+            status="failed",
+            error_code=exc.code,
+            error_message=exc.message,
+            latency_ms=ai.last_latency_ms,
+        )
+        raise
+    record_ai_usage(
+        db,
+        user_id=user_id,
+        goal_id=goal.id,
+        task_node_id=task.id,
+        operation="extract_skills",
+        model=ai.last_model,
+        usage=ai.last_usage,
+        status="success",
+        latency_ms=ai.last_latency_ms,
+    )
 
     now = utc_now()
     check_in = TaskCheckIn(

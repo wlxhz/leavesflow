@@ -8,7 +8,9 @@
   ],
   "scripts": {
     "dev:web": "npm --workspace @leavesflow/web run dev",
+    "dev:admin": "npm --workspace @leavesflow/admin run dev",
     "build:web": "npm --workspace @leavesflow/web run build",
+    "build:admin": "npm --workspace @leavesflow/admin run build",
     "build:android": "npm run build:web && npx cap sync android && cd android && gradlew.bat --init-script gradle-mirrors.init.gradle assembleDebug",
     "build:android:linux": "npm run build:web && npx cap sync android && cd android && ./gradlew --init-script gradle-mirrors.init.gradle assembleDebug",
     "typecheck": "npm --workspace @leavesflow/web run typecheck",

@@ -18,6 +18,9 @@ from .schemas import DecompositionResult, SkillExtractionResult
 class AIClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.last_usage: dict[str, Any] | None = None
+        self.last_latency_ms: int | None = None
+        self.last_model: str | None = settings.openai_compatible.chat_model
 
     def generate_plan(self, raw_input: str, tag_context: list[dict[str, str]]) -> DecompositionResult:
         self._ensure_ai_configured()
@@ -49,6 +52,9 @@ class AIClient:
             raise AppError(503, "AI_NOT_CONFIGURED", "AI 中转服务未配置，无法生成真实可执行内容")
 
     def _chat_json(self, system_prompt: str, user_content: str, temperature: float, schema: type[Any], invalid_code: str) -> Any:
+        self.last_usage = None
+        self.last_latency_ms = None
+        self.last_model = self.settings.openai_compatible.chat_model
         base_url = self.settings.openai_compatible.base_url.rstrip("/")
         url = f"{base_url}/chat/completions"
         headers = {
@@ -65,9 +71,11 @@ class AIClient:
         }
         last_error: Exception | None = None
         for attempt in range(self.settings.openai_compatible.max_retries + 1):
+            started_at = time.perf_counter()
             try:
                 with httpx.Client(timeout=self.settings.openai_compatible.timeout_seconds) as client:
                     response = client.post(url, headers=headers, json=body)
+                self.last_latency_ms = int((time.perf_counter() - started_at) * 1000)
                 if response.status_code == 429:
                     raise AppError(503, "AI_RATE_LIMITED", "AI 服务繁忙，请稍后再试")
                 if response.status_code < 200 or response.status_code >= 300:
@@ -77,13 +85,17 @@ class AIClient:
                         f"AI 中转服务返回异常：HTTP {response.status_code}",
                         {"upstreamStatus": response.status_code, "upstreamBody": response.text[:500]},
                     )
-                content = self._extract_message_content(response.json())
+                response_payload = response.json()
+                usage = response_payload.get("usage")
+                self.last_usage = usage if isinstance(usage, dict) else None
+                content = self._extract_message_content(response_payload)
                 parsed = self._parse_json_content(content)
                 normalized = self._normalize_payload(parsed, schema)
                 return schema.model_validate(normalized)
             except AppError:
                 raise
             except (httpx.TimeoutException, httpx.HTTPError) as exc:
+                self.last_latency_ms = int((time.perf_counter() - started_at) * 1000)
                 last_error = exc
                 if attempt >= self.settings.openai_compatible.max_retries:
                     raise AppError(

@@ -1,12 +1,12 @@
 {
   "app": {
     "name": "leavesflow-api",
-    "env": "dev",
+    "env": "test",
     "demo_bearer_token": "dev-demo-token",
     "demo_user_id": "7d4c8b54-9797-4e70-96fa-2d8c2d3d4a10"
   },
   "database": {
-    "url": "sqlite:///./data/leavesflow.db"
+    "url": "sqlite:///file:leavesflow_smoke?mode=memory&cache=shared&uri=true"
   },
   "openai_compatible": {
     "base_url": "https://example-openai-relay/v1",
@@ -21,13 +21,7 @@
     "json_mode": true
   },
   "cors": {
-    "allow_origins": [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-      "https://leavesflow.syt.huickathon.cn",
-      "https://localhost",
-      "capacitor://localhost"
-    ]
+    "allow_origins": []
   },
   "mcp": {
     "enabled": false,
@@ -38,6 +32,6 @@
     "registry_path": "./skills/registry.yaml"
   },
   "admin": {
-    "access_password": "change-me"
+    "access_password": "admin-test"
   }
 }

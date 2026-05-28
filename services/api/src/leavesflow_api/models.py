@@ -119,3 +119,37 @@ class SkillTag(Base):
     count: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class AIUsageLog(Base):
+    __tablename__ = "ai_usage_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    goal_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    task_node_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    operation: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+
+class UserDeletionLog(Base):
+    __tablename__ = "user_deletion_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    deleted_at: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    goals_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    task_nodes_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    check_ins_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    skill_tags_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    delete_mode: Mapped[str] = mapped_column(String, nullable=False)

@@ -659,7 +659,33 @@ function AuthPanel({
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [formError, setFormError] = useState('')
   const registerReady = selectedCount(profile, baseCategoryKeys) === baseCategoryKeys.length
+
+  function submitAuth() {
+    const normalizedUsername = username.trim().toLowerCase()
+    const trimmedPassword = password.trim()
+    setFormError('')
+
+    if (!normalizedUsername) {
+      setFormError('请输入用户名')
+      return
+    }
+    if (!/^[a-z0-9_-]{3,32}$/.test(normalizedUsername)) {
+      setFormError('用户名需为 3-32 位英文、数字、下划线或短横线')
+      return
+    }
+    if (trimmedPassword.length < 6) {
+      setFormError('密码至少需要 6 位')
+      return
+    }
+    if (mode === 'register' && !registerReady) {
+      setFormError('注册前需要完整选择身份、专业背景和能力阶段')
+      return
+    }
+
+    onSubmit({ mode, username: normalizedUsername, password: trimmedPassword, displayName })
+  }
 
   return (
     <main className="grid gap-4 lg:grid-cols-[0.84fr_1.16fr]">
@@ -697,21 +723,33 @@ function AuthPanel({
             className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
             placeholder="用户名：英文、数字、_ 或 -"
             value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              setUsername(event.target.value)
+              setFormError('')
+            }}
           />
           <input
             className="soft-focus-ring rounded-2xl border border-line bg-paper/70 px-4 py-3 text-sm"
             placeholder="密码，至少 6 位"
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setPassword(event.target.value)
+              setFormError('')
+            }}
           />
         </div>
 
+        {formError && (
+          <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+            {formError}
+          </p>
+        )}
+
         <button
           className="soft-focus-ring mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={loading || !username.trim() || !password.trim() || (mode === 'register' && !registerReady)}
-          onClick={() => onSubmit({ mode, username, password, displayName })}
+          disabled={loading}
+          onClick={submitAuth}
         >
           {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
           {mode === 'register' ? '注册并进入' : '登录'}

@@ -1545,6 +1545,43 @@ V1.3 暂不支持：
 - Android release 签名包。
 - Service worker 离线缓存。
 
+## 15.1 2026-05-28 注册问题修复记录
+
+现象：
+
+- App 注册新用户时容易表现为“无法注册”。
+- 生产日志中曾出现多次 `POST /api/v1/auth/register 409 Conflict`。
+- 用随机新用户名直接调用生产注册接口可以成功，说明接口整体可用，常见失败原因是用户名已存在或前端表单未完整满足注册条件。
+
+本次修复：
+
+- 后端 `POST /api/v1/auth/register` 改为原子注册流程。
+- 写入 `users`、`user_tag_profile` 和注册画像对应的初始 `skill_tags` 放在同一事务中。
+- 如果画像或技能标签写入失败，会整体回滚，避免留下只有 `users` 但没有画像的半注册账号。
+- 前端注册按钮不再因为输入不完整而静默不可提交；点击后会明确提示：
+  - 用户名不能为空。
+  - 用户名必须是 3-32 位英文、数字、下划线或短横线。
+  - 密码至少 6 位。
+  - 注册前必须完整选择身份、专业背景和能力阶段。
+
+验证：
+
+```powershell
+$env:LEAVESFLOW_CONFIG_PATH='services/api/tests/config.smoke.json'
+$env:PYTHONPATH='services/api/src'
+python -m pytest services/api/tests/test_smoke.py -q
+
+python -m compileall services\api\src\leavesflow_api
+npm run build:web
+```
+
+生产 CORS 仍需保持 Android WebView 来源可用：
+
+```text
+Origin: https://localhost
+Access-Control-Allow-Origin: https://localhost
+```
+
 ## 16. 推荐开发顺序
 
 新开发者接手后，建议按这个顺序理解项目：
