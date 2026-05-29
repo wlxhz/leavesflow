@@ -75,6 +75,9 @@ const goalCategoryKeys: TagOptionCategory['key'][] = [
 ]
 
 const inputGuidance = '写下你真正想推进的事。可以很短，也可以补充背景、交付物或截止时间。'
+const usernameRuleText = '用户名需为 3-32 位英文、数字、下划线或短横线'
+const passwordRuleText = '密码至少需要 6 位'
+const baseProfileRuleText = '注册前需要完整选择身份、专业背景和能力阶段'
 const historyDateFormatter = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
   month: '2-digit',
@@ -85,11 +88,36 @@ const historyDateFormatter = new Intl.DateTimeFormat('zh-CN', {
 
 function errorMessage(err: unknown, fallback: string) {
   if (err instanceof LeavesFlowApiError) {
+    const validationHint = validationErrorHint(err.details)
+    if (validationHint) {
+      return validationHint
+    }
     const details = err.details as { upstreamStatus?: number; upstreamBody?: string } | undefined
     const upstream = details?.upstreamStatus ? `（上游 HTTP ${details.upstreamStatus}）` : ''
     return `${err.message}${upstream}`
   }
   return err instanceof Error ? err.message : fallback
+}
+
+function validationErrorHint(details: unknown) {
+  const fields = (details as { fields?: Record<string, unknown> } | undefined)?.fields
+  if (!fields) {
+    return ''
+  }
+  const hints = new Set<string>()
+  if (fields.username) {
+    hints.add(usernameRuleText)
+  }
+  if (fields.password) {
+    hints.add(passwordRuleText)
+  }
+  if (fields.displayName) {
+    hints.add('昵称最多 32 个字符')
+  }
+  if (fields.profile || fields.identityTagIds || fields.backgroundTagIds || fields.levelTagIds) {
+    hints.add(baseProfileRuleText)
+  }
+  return [...hints].join('；')
 }
 
 function compactText(value: string, maxLength = 46) {
@@ -145,6 +173,22 @@ function profileFromMe(meData: MeResponse): UserTagProfileIds {
 
 function selectedCount(profile: UserTagProfileIds, keys: TagOptionCategory['key'][] = Object.keys(categoryToField) as TagOptionCategory['key'][]) {
   return keys.reduce((sum, key) => sum + profile[categoryToField[key]].length, 0)
+}
+
+function authValidationMessage(payload: { mode: AuthMode; username: string; password: string }, profile: UserTagProfileIds) {
+  if (!payload.username) {
+    return '请输入用户名'
+  }
+  if (!/^[a-z0-9_-]{3,32}$/.test(payload.username)) {
+    return usernameRuleText
+  }
+  if (payload.password.length < 6) {
+    return passwordRuleText
+  }
+  if (payload.mode === 'register' && selectedCount(profile, baseCategoryKeys) !== baseCategoryKeys.length) {
+    return baseProfileRuleText
+  }
+  return ''
 }
 
 function mergeGoalProfile(baseProfile: UserTagProfileIds, goalProfile: UserTagProfileIds): UserTagProfileIds {
@@ -261,6 +305,12 @@ export function App() {
     password: string
     displayName?: string
   }) {
+    const validationMessage = authValidationMessage(payload, baseProfile)
+    if (validationMessage) {
+      setError(validationMessage)
+      setMessage('')
+      return
+    }
     setLoading(true)
     setError('')
     setMessage('')
@@ -671,16 +721,12 @@ function AuthPanel({
       setFormError('请输入用户名')
       return
     }
-    if (!/^[a-z0-9_-]{3,32}$/.test(normalizedUsername)) {
-      setFormError('用户名需为 3-32 位英文、数字、下划线或短横线')
-      return
-    }
-    if (trimmedPassword.length < 6) {
-      setFormError('密码至少需要 6 位')
-      return
-    }
-    if (mode === 'register' && !registerReady) {
-      setFormError('注册前需要完整选择身份、专业背景和能力阶段')
+    const validationMessage = authValidationMessage(
+      { mode, username: normalizedUsername, password: trimmedPassword },
+      profile,
+    )
+    if (validationMessage) {
+      setFormError(validationMessage)
       return
     }
 
