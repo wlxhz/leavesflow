@@ -28,6 +28,36 @@ export class LeavesFlowApiError extends Error {
   }
 }
 
+function fallbackErrorBody(message: string, code = 'SERVER_RESPONSE_ERROR'): ApiErrorBody {
+  return {
+    error: {
+      code,
+      message,
+      requestId: '',
+      details: null,
+    },
+  }
+}
+
+function parseJsonBody<T>(text: string): T | null {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return null
+  }
+  try {
+    return JSON.parse(trimmed) as T
+  } catch {
+    return null
+  }
+}
+
+function nonJsonErrorMessage(status: number) {
+  if (status === 502 || status === 503 || status === 504) {
+    return '服务响应超时或暂时不可用，请稍后再试'
+  }
+  return '服务返回了无法识别的响应，请稍后再试'
+}
+
 export interface LeavesFlowClientOptions {
   baseUrl: string
   token?: string
@@ -131,11 +161,21 @@ export class LeavesFlowClient {
         ...(init.headers ?? {}),
       },
     })
+    const responseText = await response.text()
 
     if (!response.ok) {
-      const body = (await response.json()) as ApiErrorBody
+      const body =
+        parseJsonBody<ApiErrorBody>(responseText) ??
+        fallbackErrorBody(nonJsonErrorMessage(response.status), 'SERVER_NON_JSON_RESPONSE')
       throw new LeavesFlowApiError(body, response.status)
     }
-    return (await response.json()) as T
+    const body = parseJsonBody<T>(responseText)
+    if (body === null) {
+      throw new LeavesFlowApiError(
+        fallbackErrorBody('服务返回了无法识别的响应，请稍后再试', 'SERVER_NON_JSON_RESPONSE'),
+        response.status,
+      )
+    }
+    return body
   }
 }
